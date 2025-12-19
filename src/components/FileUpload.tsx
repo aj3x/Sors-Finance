@@ -3,8 +3,8 @@
 import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { SourceBadge } from "@/components/ui/source-badge";
 import { Upload, FileSpreadsheet, X, AlertCircle } from "lucide-react";
 import { UploadedFile } from "@/lib/types";
 
@@ -121,15 +121,7 @@ export function FileUpload({
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <Badge
-                    variant={
-                      uploadedFile.bankType === "UNKNOWN"
-                        ? "destructive"
-                        : "default"
-                    }
-                  >
-                    {uploadedFile.bankType}
-                  </Badge>
+                  <SourceBadge source={uploadedFile.bankType} />
                   <Button
                     variant="ghost"
                     size="sm"

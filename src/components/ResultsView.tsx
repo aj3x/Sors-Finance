@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -23,6 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { SourceBadge } from "@/components/ui/source-badge";
 import { Transaction, Category, DateFilter } from "@/lib/types";
 import {
   getTransactionsByCategory,
@@ -68,17 +70,6 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
       month: "short",
       day: "numeric",
     }).format(date);
-  };
-
-  const getSourceBadgeColor = (source: string) => {
-    switch (source) {
-      case "CIBC":
-        return "#c41f3f";
-      case "AMEX":
-        return "#026ed1";
-      default:
-        return undefined; // Falls back to bg-muted
-    }
   };
 
   // Get available years and months from transactions
@@ -147,6 +138,17 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
     return "all";
   };
 
+  const handleCopyTotal = async (total: number, categoryName: string) => {
+    try {
+      await navigator.clipboard.writeText(formatCurrency(total));
+      toast.success(`Copied ${categoryName} total!`, {
+        duration: 2000,
+      });
+    } catch (err) {
+      toast.error("Failed to copy");
+    }
+  };
+
   return (
     <Card>
       <CardHeader>
@@ -206,11 +208,17 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
                   <div className="flex items-center justify-between w-full pr-4">
                     <span className="font-medium">{category.name}</span>
                     <span
-                      className={`font-semibold ${
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopyTotal(total, category.name);
+                      }}
+                      className={`font-semibold cursor-pointer hover:opacity-80 transition-opacity ${
                         total >= 0 ? "text-green-600" : "text-red-600"
                       }`}
+                      style={{ textDecoration: 'none !important' }}
+                      title="Click to copy"
                     >
-                      {formatCurrency(total)}
+                      {formatCurrency(Math.abs(total))}
                     </span>
                   </div>
                 </AccordionTrigger>
@@ -234,24 +242,16 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
                             <p className="truncate">{transaction.description}</p>
                           </TableCell>
                           <TableCell className="w-[100px]">
-                            <span
-                              className="text-[11px] px-0.5 py-[1px] rounded font-medium inline-block w-12 text-center"
-                              style={{
-                                backgroundColor: getSourceBadgeColor(transaction.source),
-                                color: getSourceBadgeColor(transaction.source) ? "#ffffff" : undefined,
-                              }}
-                            >
-                              {transaction.source}
-                            </span>
+                            <SourceBadge source={transaction.source} />
                           </TableCell>
                           <TableCell className="w-[140px] text-right whitespace-nowrap">
                             {transaction.amountOut > 0 ? (
                               <span className="text-destructive">
-                                -{formatCurrency(transaction.amountOut)}
+                                {formatCurrency(transaction.amountOut)}
                               </span>
                             ) : (
                               <span className="text-green-500">
-                                +{formatCurrency(transaction.amountIn)}
+                                {formatCurrency(transaction.amountIn)}
                               </span>
                             )}
                           </TableCell>

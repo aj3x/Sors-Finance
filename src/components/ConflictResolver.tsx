@@ -171,11 +171,11 @@ export function ConflictResolver({
                   <TableCell className="whitespace-nowrap">
                     {transaction.amountOut > 0 ? (
                       <span className="text-destructive">
-                        -{formatCurrency(transaction.amountOut)}
+                        {formatCurrency(transaction.amountOut)}
                       </span>
                     ) : (
                       <span className="text-green-600">
-                        +{formatCurrency(transaction.amountIn)}
+                        {formatCurrency(transaction.amountIn)}
                       </span>
                     )}
                   </TableCell>

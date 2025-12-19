@@ -292,11 +292,11 @@ export function UnassignedList({
                   <TableCell className="whitespace-nowrap">
                     {group.totalOut > 0 ? (
                       <span className="text-destructive">
-                        -{formatCurrency(group.totalOut)}
+                        {formatCurrency(group.totalOut)}
                       </span>
                     ) : (
                       <span className="text-green-500">
-                        +{formatCurrency(group.totalIn)}
+                        {formatCurrency(group.totalIn)}
                       </span>
                     )}
                   </TableCell>
