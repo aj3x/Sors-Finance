@@ -35,15 +35,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Plus, Check, Pencil } from "lucide-react";
-import { Transaction, Category } from "@/lib/types";
+import { Plus, Check, Pencil, X, Undo2 } from "lucide-react";
+import { Transaction } from "@/lib/types";
+import { DbCategory } from "@/lib/db";
 
 interface UnassignedListProps {
   unassignedTransactions: Transaction[];
-  categories: Category[];
+  categories: DbCategory[];
   onAddKeyword: (categoryId: string, keyword: string) => void;
   onCreateCategory: (name: string, keyword: string) => void;
   onReprocess: () => void;
+  onIgnore?: (transactionId: string) => void;
+  onUndo?: (transactionId: string) => void;
+  onIgnoreAll?: () => void;
 }
 
 interface AddedKeyword {
@@ -58,6 +62,9 @@ export function UnassignedList({
   onAddKeyword,
   onCreateCategory,
   onReprocess,
+  onIgnore,
+  onUndo,
+  onIgnoreAll,
 }: UnassignedListProps) {
   const [selectedTransaction, setSelectedTransaction] =
     useState<Transaction | null>(null);
@@ -121,7 +128,7 @@ export function UnassignedList({
 
     for (const category of categories) {
       if (category.keywords.some(k => k.toLowerCase() === keywordLower)) {
-        return { exists: true, categoryName: category.name, categoryId: category.id };
+        return { exists: true, categoryName: category.name, categoryId: category.uuid };
       }
     }
 
@@ -149,6 +156,7 @@ export function UnassignedList({
     const totalIn = transactions.reduce((sum, t) => sum + t.amountIn, 0);
     const hasKeyword = transactions.some(t => addedKeywords.has(t.id));
     const addedKeyword = hasKeyword ? addedKeywords.get(transactions[0].id) : null;
+    const isIgnored = transactions.some(t => t.isIgnored);
 
     return {
       matchField,
@@ -158,6 +166,7 @@ export function UnassignedList({
       totalIn,
       hasKeyword,
       addedKeyword,
+      isIgnored,
       // Use the first transaction's date for sorting
       date: transactions[0].date,
     };
@@ -208,7 +217,7 @@ export function UnassignedList({
 
     // Apply to all transactions with the same matchField
     if (selectedTransaction) {
-      const category = categories.find(c => c.id === (isCreatingNew ? "new" : selectedCategoryId));
+      const category = categories.find(c => c.uuid === (isCreatingNew ? "new" : selectedCategoryId));
       const newMap = new Map(addedKeywords);
 
       // Find all transactions with the same matchField
@@ -240,8 +249,16 @@ export function UnassignedList({
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            <span>Unassigned Transactions</span>
-            <Badge variant="secondary">{unassignedTransactions.length}</Badge>
+            <div className="flex items-center gap-2">
+              <span>Unassigned Transactions</span>
+              <Badge variant="secondary">{unassignedTransactions.length}</Badge>
+            </div>
+            {onIgnoreAll && (
+              <Button variant="outline" size="sm" onClick={onIgnoreAll}>
+                <X className="h-4 w-4 mr-2" />
+                Ignore All
+              </Button>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -301,7 +318,25 @@ export function UnassignedList({
                     )}
                   </TableCell>
                   <TableCell>
-                    {group.hasKeyword ? (
+                    {group.isIgnored ? (
+                      <div className="flex items-center justify-end gap-2">
+                        <Badge variant="secondary">
+                          <X className="h-3 w-3 mr-1" />
+                          Ignored
+                        </Badge>
+                        {onUndo && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              group.transactions.forEach(t => onUndo(t.id));
+                            }}
+                          >
+                            <Undo2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    ) : group.hasKeyword ? (
                       <TooltipProvider>
                         <div className="flex items-center gap-2">
                           <Check className="h-4 w-4 text-green-500" />
@@ -330,14 +365,27 @@ export function UnassignedList({
                         </div>
                       </TooltipProvider>
                     ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleGroupClick(group.transactions)}
-                      >
-                        <Plus className="h-4 w-4 mr-2" />
-                        Add Keyword
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleGroupClick(group.transactions)}
+                        >
+                          <Plus className="h-4 w-4 mr-2" />
+                          Add Keyword
+                        </Button>
+                        {onIgnore && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              group.transactions.forEach(t => onIgnore(t.id));
+                            }}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -410,7 +458,7 @@ export function UnassignedList({
                     </SelectTrigger>
                     <SelectContent>
                       {categories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.id}>
+                        <SelectItem key={cat.uuid} value={cat.uuid}>
                           {cat.name}
                         </SelectItem>
                       ))}

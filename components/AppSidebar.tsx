@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Receipt, Wallet, DollarSign } from "lucide-react";
+import { LayoutDashboard, Receipt, Wallet, DollarSign, Tags } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +32,11 @@ const navItems = [
     url: "/budget",
     icon: Wallet,
   },
+  {
+    title: "Categories",
+    url: "/categories",
+    icon: Tags,
+  },
 ];
 
 export function AppSidebar() {
@@ -45,8 +50,8 @@ export function AppSidebar() {
             <DollarSign className="h-5 w-5" />
           </div>
           <div className="flex flex-col">
-            <span className="text-sm font-semibold">Sors Finance</span>
-            <span className="text-xs text-muted-foreground">Budget Tracker</span>
+            <span className="text-sm font-semibold">Sors</span>
+            <span className="text-xs text-muted-foreground">Budget Tracking Tool</span>
           </div>
         </div>
       </SidebarHeader>

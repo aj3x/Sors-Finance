@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { toast } from "sonner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -24,8 +23,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { SourceBadge } from "@/components/ui/source-badge";
-import { Transaction, Category, DateFilter } from "@/lib/types";
+import { Badge } from "@/components/ui/badge";
+import { Transaction, DateFilter } from "@/lib/types";
+import { DbCategory } from "@/lib/db";
 import {
   getTransactionsByCategory,
   getCategoryTotal,
@@ -36,7 +36,7 @@ import {
 
 interface ResultsViewProps {
   transactions: Transaction[];
-  categories: Category[];
+  categories: DbCategory[];
 }
 
 const MONTH_NAMES = [
@@ -97,7 +97,7 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
       .map((category) => {
         const categoryTransactions = getTransactionsByCategory(
           filteredTransactions,
-          category.id
+          category.uuid
         );
 
         // Sort by date (newest first)
@@ -105,7 +105,7 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
           (a, b) => b.date.getTime() - a.date.getTime()
         );
 
-        const total = getCategoryTotal(filteredTransactions, category.id);
+        const total = getCategoryTotal(filteredTransactions, category.uuid);
 
         return {
           category,
@@ -136,17 +136,6 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
     if (dateFilter.type === "month")
       return `month-${dateFilter.year}-${dateFilter.month}`;
     return "all";
-  };
-
-  const handleCopyTotal = async (total: number, categoryName: string) => {
-    try {
-      await navigator.clipboard.writeText(formatCurrency(total));
-      toast.success(`Copied ${categoryName} total!`, {
-        duration: 2000,
-      });
-    } catch (err) {
-      toast.error("Failed to copy");
-    }
   };
 
   return (
@@ -200,23 +189,17 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
           <Accordion type="multiple" className="w-full">
             {categoryResults.map(({ category, transactions, total }, index) => (
               <AccordionItem
-                key={category.id}
-                value={category.id}
+                key={category.uuid}
+                value={category.uuid}
                 className={index === categoryResults.length - 1 ? "border-b-0" : ""}
               >
                 <AccordionTrigger>
                   <div className="flex items-center justify-between w-full pr-4">
                     <span className="font-medium">{category.name}</span>
                     <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCopyTotal(total, category.name);
-                      }}
-                      className={`font-semibold cursor-pointer hover:opacity-80 transition-opacity ${
+                      className={`font-semibold ${
                         total >= 0 ? "text-green-600" : "text-red-600"
                       }`}
-                      style={{ textDecoration: 'none !important' }}
-                      title="Click to copy"
                     >
                       {formatCurrency(Math.abs(total))}
                     </span>
@@ -242,7 +225,7 @@ export function ResultsView({ transactions, categories }: ResultsViewProps) {
                             <p className="truncate">{transaction.description}</p>
                           </TableCell>
                           <TableCell className="w-[100px]">
-                            <SourceBadge source={transaction.source} />
+                            <Badge variant="secondary">{transaction.source}</Badge>
                           </TableCell>
                           <TableCell className="w-[140px] text-right whitespace-nowrap">
                             {transaction.amountOut > 0 ? (

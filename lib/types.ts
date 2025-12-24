@@ -13,6 +13,10 @@ export interface Transaction {
   categoryId: string | null; // null if unassigned
   isConflict: boolean; // true if matched multiple categories
   conflictingCategories?: string[]; // Category IDs if conflict
+  isDuplicate?: boolean; // true if exists in database already
+  allowDuplicate?: boolean; // user explicitly allowed importing this duplicate
+  ignoreDuplicate?: boolean; // user explicitly chose to ignore this duplicate
+  isIgnored?: boolean; // user chose to leave this unassigned (will import to "Uncategorized")
 }
 
 /**
@@ -54,6 +58,7 @@ export interface CategorizationSummary {
   categorized: number;
   conflicts: number;
   unassigned: number;
+  duplicates: number;
   total: number;
 }
 

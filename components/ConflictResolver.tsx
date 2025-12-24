@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,65 +24,25 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Badge } from "@/components/ui/badge";
-import { Check, Pencil } from "lucide-react";
-import { Transaction, Category } from "@/lib/types";
+import { Check, Undo2 } from "lucide-react";
+import { Transaction } from "@/lib/types";
+import { DbCategory } from "@/lib/db";
 
 interface ConflictResolverProps {
   conflictTransactions: Transaction[];
-  categories: Category[];
+  categories: DbCategory[];
   onResolve: (transactionId: string, categoryId: string) => void;
-}
-
-interface ResolvedConflict {
-  categoryId: string;
-  categoryName: string;
+  onUndo: (transactionId: string) => void;
 }
 
 export function ConflictResolver({
   conflictTransactions,
   categories,
   onResolve,
+  onUndo,
 }: ConflictResolverProps) {
-  const [resolvedConflicts, setResolvedConflicts] = useState<Map<string, ResolvedConflict>>(new Map());
-  const [allConflicts, setAllConflicts] = useState<Transaction[]>([]);
-
-  // Track all conflicts on mount or when conflicts change
-  useEffect(() => {
-    // Add new conflicts to the list, but keep resolved ones
-    const newConflictIds = new Set(conflictTransactions.map(t => t.id));
-    const existingResolved = allConflicts.filter(t => resolvedConflicts.has(t.id));
-    const newConflicts = conflictTransactions.filter(t => !resolvedConflicts.has(t.id));
-
-    // If the conflict list completely changes (like after reprocess), reset everything
-    if (conflictTransactions.length > 0 && allConflicts.length > 0 &&
-        !conflictTransactions.some(t => allConflicts.some(a => a.id === t.id))) {
-      setResolvedConflicts(new Map());
-      setAllConflicts(conflictTransactions);
-    } else {
-      setAllConflicts([...existingResolved, ...newConflicts]);
-    }
-  }, [conflictTransactions]);
-
-  const handleResolve = (transactionId: string, categoryId: string) => {
-    const category = categories.find(c => c.id === categoryId);
-    if (category) {
-      const newMap = new Map(resolvedConflicts);
-      newMap.set(transactionId, {
-        categoryId,
-        categoryName: category.name,
-      });
-      setResolvedConflicts(newMap);
-      onResolve(transactionId, categoryId);
-    }
-  };
-
-  const handleEdit = (transactionId: string) => {
-    const newMap = new Map(resolvedConflicts);
-    newMap.delete(transactionId);
-    setResolvedConflicts(newMap);
-  };
-
-  const unresolvedCount = allConflicts.filter(t => !resolvedConflicts.has(t.id)).length;
+  // Count unresolved (no categoryId yet)
+  const unresolvedCount = conflictTransactions.filter(t => !t.categoryId).length;
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-CA", {
       style: "currency",
@@ -99,14 +58,19 @@ export function ConflictResolver({
     }).format(date);
   };
 
-  const getConflictingCategories = (transaction: Transaction): Category[] => {
+  const getConflictingCategories = (transaction: Transaction): DbCategory[] => {
     if (!transaction.conflictingCategories) return [];
     return categories.filter((cat) =>
-      transaction.conflictingCategories?.includes(cat.id)
+      transaction.conflictingCategories?.includes(cat.uuid)
     );
   };
 
-  if (allConflicts.length === 0 && conflictTransactions.length === 0) {
+  const getResolvedCategory = (transaction: Transaction): DbCategory | undefined => {
+    if (!transaction.categoryId) return undefined;
+    return categories.find(c => c.uuid === transaction.categoryId);
+  };
+
+  if (conflictTransactions.length === 0) {
     return null;
   }
 
@@ -115,7 +79,9 @@ export function ConflictResolver({
       <CardHeader>
         <CardTitle className="flex items-center justify-between">
           <span>Resolve Conflicts</span>
-          <Badge variant="destructive">{unresolvedCount}</Badge>
+          <Badge variant={unresolvedCount > 0 ? "destructive" : "secondary"}>
+            {conflictTransactions.length}
+          </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -135,8 +101,11 @@ export function ConflictResolver({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {allConflicts.map((transaction) => {
+            {conflictTransactions.map((transaction) => {
               const conflicting = getConflictingCategories(transaction);
+              const resolvedCategory = getResolvedCategory(transaction);
+              const isResolved = !!resolvedCategory;
+
               return (
                 <TableRow key={transaction.id}>
                   <TableCell className="whitespace-nowrap">
@@ -182,31 +151,31 @@ export function ConflictResolver({
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
                       {conflicting.map((cat) => (
-                        <Badge key={cat.id} variant="outline">
+                        <Badge key={cat.uuid} variant="outline">
                           {cat.name}
                         </Badge>
                       ))}
                     </div>
                   </TableCell>
                   <TableCell>
-                    {resolvedConflicts.has(transaction.id) ? (
+                    {isResolved ? (
                       <div className="flex items-center gap-2">
-                        <Check className="h-4 w-4 text-green-500" />
-                        <span className="text-sm font-medium">
-                          {resolvedConflicts.get(transaction.id)!.categoryName}
-                        </span>
+                        <Badge variant="default" className="bg-green-600">
+                          <Check className="h-3 w-3 mr-1" />
+                          {resolvedCategory.name}
+                        </Badge>
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleEdit(transaction.id)}
+                          onClick={() => onUndo(transaction.id)}
                         >
-                          <Pencil className="h-4 w-4" />
+                          <Undo2 className="h-4 w-4" />
                         </Button>
                       </div>
                     ) : (
                       <Select
                         onValueChange={(value) =>
-                          handleResolve(transaction.id, value)
+                          onResolve(transaction.id, value)
                         }
                       >
                         <SelectTrigger className="w-[180px]">
@@ -214,7 +183,7 @@ export function ConflictResolver({
                         </SelectTrigger>
                         <SelectContent>
                           {conflicting.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
+                            <SelectItem key={cat.uuid} value={cat.uuid}>
                               {cat.name}
                             </SelectItem>
                           ))}

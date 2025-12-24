@@ -18,7 +18,7 @@ export interface MonthlySpending {
 export interface CategorySpending {
   category: string;
   amount: number;
-  fill: string;
+  budget: number;
 }
 
 export interface BudgetItem {
@@ -85,12 +85,12 @@ export const monthlySpendingData: MonthlySpending[] = [
 
 // Category spending for pie/bar charts
 export const categorySpendingData: CategorySpending[] = [
-  { category: "Groceries", amount: 650, fill: "hsl(var(--chart-1))" },
-  { category: "Dining", amount: 420, fill: "hsl(var(--chart-2))" },
-  { category: "Transport", amount: 280, fill: "hsl(var(--chart-3))" },
-  { category: "Shopping", amount: 520, fill: "hsl(var(--chart-4))" },
-  { category: "Subscriptions", amount: 180, fill: "hsl(var(--chart-5))" },
-  { category: "Utilities", amount: 350, fill: "hsl(var(--primary))" },
+  { category: "Groceries", amount: 650, budget: 800 },
+  { category: "Dining", amount: 420, budget: 400 },
+  { category: "Transport", amount: 280, budget: 300 },
+  { category: "Shopping", amount: 520, budget: 200 },
+  { category: "Subscriptions", amount: 180, budget: 200 },
+  { category: "Utilities", amount: 350, budget: 400 },
 ];
 
 // Budget items for budget page

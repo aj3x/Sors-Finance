@@ -4,20 +4,16 @@ import { useState, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { SourceBadge } from "@/components/ui/source-badge";
+import { Badge } from "@/components/ui/badge";
 import { Upload, FileSpreadsheet, X, AlertCircle } from "lucide-react";
 import { UploadedFile } from "@/lib/types";
 
 interface FileUploadProps {
   onFilesSelected: (files: UploadedFile[]) => void;
-  onProcess: () => void;
-  isProcessing: boolean;
 }
 
 export function FileUpload({
   onFilesSelected,
-  onProcess,
-  isProcessing,
 }: FileUploadProps) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
@@ -68,11 +64,11 @@ export function FileUpload({
   const hasUnknownFiles = files.some((f) => f.bankType === "UNKNOWN");
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex flex-col min-h-0">
+      <CardHeader className="flex-shrink-0">
         <CardTitle>Upload Bank Documents</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 flex-1 overflow-y-auto min-h-0">
         <div
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -121,7 +117,9 @@ export function FileUpload({
                   </div>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <SourceBadge source={uploadedFile.bankType} />
+                  <Badge variant={uploadedFile.bankType === "UNKNOWN" ? "destructive" : "secondary"}>
+                    {uploadedFile.bankType}
+                  </Badge>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -143,16 +141,6 @@ export function FileUpload({
               &quot;cibc&quot; or &quot;Summary&quot; for automatic detection.
             </AlertDescription>
           </Alert>
-        )}
-
-        {files.length > 0 && (
-          <Button
-            onClick={onProcess}
-            disabled={isProcessing || hasUnknownFiles}
-            className="w-full"
-          >
-            {isProcessing ? "Processing..." : "Process Files"}
-          </Button>
         )}
       </CardContent>
     </Card>

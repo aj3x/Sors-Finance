@@ -4,12 +4,10 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -36,8 +34,8 @@ import {
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, Trash2, X, Search, GripVertical, Check } from "lucide-react";
-import { Category } from "@/lib/types";
+import { Plus, Pencil, Trash2, X, Search, GripVertical, Check, Lock } from "lucide-react";
+import { DbCategory, SYSTEM_CATEGORIES } from "@/lib/db";
 import {
   DndContext,
   closestCenter,
@@ -48,7 +46,6 @@ import {
   DragEndEvent,
 } from "@dnd-kit/core";
 import {
-  arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
   useSortable,
@@ -57,17 +54,17 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 interface CategoryManagerProps {
-  categories: Category[];
-  onCategoryAdd: (name: string, keywords: string[]) => void;
-  onCategoryUpdate: (id: string, name: string, keywords: string[]) => void;
-  onCategoryDelete: (id: string) => void;
-  onCategoryReorder: (activeId: string, overId: string) => void;
+  categories: DbCategory[];
+  onCategoryAdd: (name: string, keywords: string[]) => Promise<void> | void;
+  onCategoryUpdate: (id: number, name: string, keywords: string[]) => Promise<void> | void;
+  onCategoryDelete: (id: number) => Promise<void> | void;
+  onCategoryReorder: (activeId: number, overId: number) => Promise<void> | void;
 }
 
 interface SortableItemProps {
-  category: Category;
-  onEdit: (category: Category) => void;
-  onDelete: (id: string) => void;
+  category: DbCategory;
+  onEdit: (category: DbCategory) => void;
+  onDelete: (id: number) => void;
 }
 
 function SortableItem({ category, onEdit, onDelete }: SortableItemProps) {
@@ -78,13 +75,15 @@ function SortableItem({ category, onEdit, onDelete }: SortableItemProps) {
     transform,
     transition,
     isDragging,
-  } = useSortable({ id: category.id });
+  } = useSortable({ id: category.id! });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.5 : 1,
   };
+
+  const isSystemCategory = category.isSystem;
 
   return (
     <div
@@ -101,7 +100,24 @@ function SortableItem({ category, onEdit, onDelete }: SortableItemProps) {
           <GripVertical className="h-5 w-5 text-muted-foreground" />
         </button>
         <div className="flex-1">
-          <h4 className="font-medium text-sm">{category.name}</h4>
+          <div className="flex items-center gap-2">
+            <h4 className="font-medium text-sm">{category.name}</h4>
+            {isSystemCategory && (
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="text-xs gap-1 px-1.5">
+                      <Lock className="h-3 w-3" />
+                      System
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>System category - cannot be deleted</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1 mt-2">
             {category.keywords.length === 0 ? (
               <span className="text-xs text-muted-foreground">
@@ -141,13 +157,15 @@ function SortableItem({ category, onEdit, onDelete }: SortableItemProps) {
         >
           <Pencil className="h-4 w-4" />
         </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => onDelete(category.id)}
-        >
-          <Trash2 className="h-4 w-4 text-destructive" />
-        </Button>
+        {!isSystemCategory && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onDelete(category.id!)}
+          >
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </Button>
+        )}
       </div>
     </div>
   );
@@ -161,7 +179,7 @@ export function CategoryManager({
   onCategoryReorder,
 }: CategoryManagerProps) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<Category | null>(
+  const [editingCategory, setEditingCategory] = useState<DbCategory | null>(
     null
   );
   const [newCategoryName, setNewCategoryName] = useState("");
@@ -186,7 +204,7 @@ export function CategoryManager({
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
-      onCategoryReorder(active.id as string, over.id as string);
+      onCategoryReorder(active.id as number, over.id as number);
     }
   };
 
@@ -205,16 +223,16 @@ export function CategoryManager({
     return { exists: false };
   };
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
-    onCategoryAdd(newCategoryName.trim(), keywords);
+    await onCategoryAdd(newCategoryName.trim(), keywords);
     resetForm();
     setIsAddDialogOpen(false);
   };
 
-  const handleUpdateCategory = () => {
+  const handleUpdateCategory = async () => {
     if (!editingCategory || !newCategoryName.trim()) return;
-    onCategoryUpdate(editingCategory.id, newCategoryName.trim(), keywords);
+    await onCategoryUpdate(editingCategory.id!, newCategoryName.trim(), keywords);
     resetForm();
     setEditingCategory(null);
   };
@@ -255,7 +273,7 @@ export function CategoryManager({
     }
 
     if (validKeywords.length > 0) {
-      setKeywords([...keywords, ...validKeywords]);
+      setKeywords(prev => [...prev, ...validKeywords]);
       setKeywordError("");
     }
 
@@ -263,7 +281,7 @@ export function CategoryManager({
   };
 
   const handleRemoveKeyword = (keyword: string) => {
-    setKeywords(keywords.filter((k) => k !== keyword));
+    setKeywords(prev => prev.filter((k) => k !== keyword));
   };
 
   const handleStartEditKeyword = (keyword: string) => {
@@ -296,7 +314,7 @@ export function CategoryManager({
     }
 
     // Update the keyword
-    setKeywords(keywords.map(k => k === editingKeyword ? trimmedValue : k));
+    setKeywords(prev => prev.map(k => k === editingKeyword ? trimmedValue : k));
     setEditingKeyword(null);
     setEditingKeywordValue("");
     setKeywordError("");
@@ -351,7 +369,7 @@ export function CategoryManager({
     }
 
     if (validKeywords.length > 0) {
-      setKeywords([...keywords, ...validKeywords]);
+      setKeywords(prev => [...prev, ...validKeywords]);
       setBulkAddText("");
       setBulkAddOpen(false);
       setKeywordError("");
@@ -377,11 +395,11 @@ export function CategoryManager({
   };
 
   const handleBulkDelete = () => {
-    setKeywords(keywords.filter(k => !selectedKeywords.has(k)));
+    setKeywords(prev => prev.filter(k => !selectedKeywords.has(k)));
     setSelectedKeywords(new Set());
   };
 
-  const openEditDialog = (category: Category) => {
+  const openEditDialog = (category: DbCategory) => {
     setEditingCategory(category);
     setNewCategoryName(category.name);
     setKeywords([...category.keywords]);
@@ -407,8 +425,8 @@ export function CategoryManager({
     .reverse();
 
   return (
-    <Card>
-      <CardHeader>
+    <Card className="flex flex-col min-h-0">
+      <CardHeader className="flex-shrink-0">
         <div className="flex items-center justify-between">
           <CardTitle>Category Manager</CardTitle>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
@@ -430,6 +448,29 @@ export function CategoryManager({
                     placeholder="Category Name (e.g., Groceries)"
                     className="h-9"
                   />
+                </div>
+
+                <div className="flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={newKeywordInput}
+                      onChange={(e) => handleKeywordInputChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddKeyword();
+                        }
+                      }}
+                      placeholder="Add keyword (comma-separated for multiple)"
+                      className="h-9 flex-1"
+                    />
+                    <Button size="sm" onClick={handleAddKeyword} disabled={!newKeywordInput.trim()}>
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {keywordError && (
+                    <p className="text-xs text-destructive mt-1">{keywordError}</p>
+                  )}
                 </div>
 
                 <div className="flex-shrink-0">
@@ -486,9 +527,6 @@ export function CategoryManager({
                       </Button>
                     )}
                   </div>
-                  {keywordError && (
-                    <p className="text-xs text-destructive mt-1">{keywordError}</p>
-                  )}
                 </div>
 
                 {keywords.length > 0 && (
@@ -607,20 +645,20 @@ export function CategoryManager({
           </Dialog>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex-1 overflow-y-auto min-h-0">
         {categories.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No categories yet. Add one to get started!
           </p>
         ) : (
-          <div className="max-h-[600px] overflow-y-auto pr-2">
+          <div className="pr-2">
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={categories.map((cat) => cat.id)}
+                items={categories.map((cat) => cat.id!)}
                 strategy={verticalListSortingStrategy}
               >
                 <div className="space-y-2">
@@ -649,12 +687,53 @@ export function CategoryManager({
             </DialogHeader>
             <div className="flex flex-col gap-3 overflow-hidden flex-1">
               <div className="flex-shrink-0">
-                <Input
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="Category Name"
-                  className="h-9"
-                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Category Name"
+                    className="h-9 flex-1"
+                    disabled={editingCategory?.isSystem}
+                  />
+                  {editingCategory?.isSystem && (
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="text-xs gap-1 px-1.5 shrink-0">
+                            <Lock className="h-3 w-3" />
+                            System
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>System category name cannot be changed</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex-shrink-0">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={newKeywordInput}
+                    onChange={(e) => handleKeywordInputChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddKeyword();
+                      }
+                    }}
+                    placeholder="Add keyword (comma-separated for multiple)"
+                    className="h-9 flex-1"
+                  />
+                  <Button size="sm" onClick={handleAddKeyword} disabled={!newKeywordInput.trim()}>
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                {keywordError && (
+                  <p className="text-xs text-destructive mt-1">{keywordError}</p>
+                )}
               </div>
 
               <div className="flex-shrink-0">
@@ -711,9 +790,6 @@ export function CategoryManager({
                     </Button>
                   )}
                 </div>
-                {keywordError && (
-                  <p className="text-xs text-destructive mt-1">{keywordError}</p>
-                )}
               </div>
 
               {keywords.length > 0 && (

@@ -1,4 +1,17 @@
-import { Transaction, Category, CategorizationSummary } from "./types";
+import { Transaction, CategorizationSummary } from "./types";
+import { DbCategory } from "./db";
+
+// Type alias for categories that can be used with the categorizer
+// Supports both legacy Category (id: string) and DbCategory (uuid: string)
+type CategorizerCategory = { id?: string | number; uuid?: string; name: string; keywords: string[] };
+
+// Get the string ID from a category (either id or uuid)
+function getCategoryId(cat: CategorizerCategory): string {
+  if (typeof cat.uuid === 'string') return cat.uuid;
+  if (typeof cat.id === 'string') return cat.id;
+  if (typeof cat.id === 'number') return cat.id.toString();
+  return '';
+}
 
 /**
  * Categorize transactions based on keyword matching
@@ -6,7 +19,7 @@ import { Transaction, Category, CategorizationSummary } from "./types";
  */
 export function categorizeTransactions(
   transactions: Transaction[],
-  categories: Category[]
+  categories: CategorizerCategory[]
 ): Transaction[] {
   return transactions.map((transaction) => {
     const matches = findMatchingCategories(transaction.matchField, categories);
@@ -23,7 +36,7 @@ export function categorizeTransactions(
       // Single match - categorized
       return {
         ...transaction,
-        categoryId: matches[0].id,
+        categoryId: getCategoryId(matches[0]),
         isConflict: false,
         conflictingCategories: undefined,
       };
@@ -33,7 +46,7 @@ export function categorizeTransactions(
         ...transaction,
         categoryId: null,
         isConflict: true,
-        conflictingCategories: matches.map((cat) => cat.id),
+        conflictingCategories: matches.map((cat) => getCategoryId(cat)),
       };
     }
   });
@@ -43,11 +56,11 @@ export function categorizeTransactions(
  * Find all categories that match the given text
  * Uses case-insensitive partial string matching
  */
-export function findMatchingCategories(
+export function findMatchingCategories<T extends CategorizerCategory>(
   text: string,
-  categories: Category[]
-): Category[] {
-  const matches: Category[] = [];
+  categories: T[]
+): T[] {
+  const matches: T[] = [];
   const lowerText = text.toLowerCase();
 
   for (const category of categories) {
@@ -73,22 +86,35 @@ export function getCategorizationSummary(
   let categorized = 0;
   let conflicts = 0;
   let unassigned = 0;
+  let duplicates = 0;
 
   transactions.forEach((transaction) => {
+    // Count duplicates that haven't been handled (neither allowed nor ignored)
+    if (transaction.isDuplicate && !transaction.allowDuplicate && !transaction.ignoreDuplicate) {
+      duplicates++;
+    }
+
     if (transaction.isConflict) {
-      conflicts++;
+      // Only count as conflict if not yet resolved (no categoryId)
+      if (!transaction.categoryId) {
+        conflicts++;
+      } else {
+        categorized++;
+      }
     } else if (transaction.categoryId) {
       categorized++;
-    } else {
+    } else if (!transaction.isIgnored) {
+      // Only count as unassigned if not explicitly ignored
       unassigned++;
     }
   });
 
-  return { categorized, conflicts, unassigned, total };
+  return { categorized, conflicts, unassigned, duplicates, total };
 }
 
 /**
  * Manually assign a category to a transaction (for conflict resolution)
+ * Keeps isConflict true so we know it was originally a conflict (for UI purposes)
  */
 export function assignCategory(
   transaction: Transaction,
@@ -97,8 +123,7 @@ export function assignCategory(
   return {
     ...transaction,
     categoryId,
-    isConflict: false,
-    conflictingCategories: undefined,
+    // Keep isConflict and conflictingCategories so we can show resolved status
   };
 }
 

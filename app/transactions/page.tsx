@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, FileSpreadsheet, Calendar, Hash, DollarSign } from "lucide-react";
+import { Plus, FileSpreadsheet, Calendar, Hash, DollarSign, FileX, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,10 @@ import {
 } from "@/components/ui/dialog";
 import { Toaster } from "sonner";
 import { TransactionImporter } from "@/components/TransactionImporter";
-import { dummyImports, type ImportRecord } from "@/lib/dummyData";
+import { TransactionDataTable } from "@/components/TransactionDataTable";
+import { AddTransactionDialog } from "@/components/AddTransactionDialog";
+import { useImports, useTransactions, useCategories } from "@/lib/hooks";
+import { DbImport } from "@/lib/db";
 
 function formatDate(date: Date): string {
   return new Intl.DateTimeFormat("en-US", {
@@ -31,48 +34,51 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-function ImportCard({ record }: { record: ImportRecord }) {
+function ImportCard({ record }: { record: DbImport }) {
   return (
-    <Card className="hover:bg-muted/50 transition-colors">
-      <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <FileSpreadsheet className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="font-medium">{record.fileName}</p>
-              <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {formatDate(record.date)}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Hash className="h-3 w-3" />
-                  {record.transactionCount} transactions
-                </span>
-                <span className="flex items-center gap-1">
-                  <DollarSign className="h-3 w-3" />
-                  {formatCurrency(record.totalAmount)}
-                </span>
-              </div>
-            </div>
+    <div className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-muted/50 transition-colors border">
+      <div className="flex items-center gap-3">
+        <FileSpreadsheet className="h-4 w-4 text-muted-foreground" />
+        <div className="flex items-center gap-4">
+          <p className="font-medium text-sm">{record.fileName}</p>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              {formatDate(record.importedAt)}
+            </span>
+            <span className="flex items-center gap-1">
+              <Hash className="h-3 w-3" />
+              {record.transactionCount}
+            </span>
+            <span className="flex items-center gap-1">
+              <DollarSign className="h-3 w-3" />
+              {formatCurrency(record.totalAmount)}
+            </span>
           </div>
-          <Badge variant={record.source === "CIBC" ? "default" : "secondary"}>
-            {record.source}
-          </Badge>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      <Badge variant={record.source === "CIBC" ? "default" : "secondary"} className="text-xs">
+        {record.source}
+      </Badge>
+    </div>
   );
 }
 
 export default function TransactionsPage() {
   const [isImportOpen, setIsImportOpen] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const imports = useImports();
+  const transactions = useTransactions();
+  const categories = useCategories();
 
   const handleImportComplete = () => {
     setIsImportOpen(false);
   };
+
+  // Sort imports by date (newest first)
+  const sortedImports = imports
+    ? [...imports].sort((a, b) => b.importedAt.getTime() - a.importedAt.getTime())
+    : [];
 
   return (
     <>
@@ -82,13 +88,19 @@ export default function TransactionsPage() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Transactions</h1>
             <p className="text-muted-foreground">
-              Import and categorize your bank transactions
+              Import and manage your bank transactions
             </p>
           </div>
-          <Button onClick={() => setIsImportOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            New Import
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setIsAddOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Transaction
+            </Button>
+            <Button onClick={() => setIsImportOpen(true)}>
+              <Upload className="h-4 w-4 mr-2" />
+              Import
+            </Button>
+          </div>
         </div>
 
         <Card>
@@ -98,15 +110,36 @@ export default function TransactionsPage() {
               View your past transaction imports and their details
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {dummyImports.map((record) => (
-              <ImportCard key={record.id} record={record} />
-            ))}
+          <CardContent>
+            {sortedImports.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <FileX className="h-10 w-10 text-muted-foreground mb-3" />
+                <p className="font-medium">No imports yet</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Click &quot;Import&quot; to upload your first bank statement
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {sortedImports.map((record) => (
+                  <ImportCard key={record.id} record={record} />
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
+        {/* Transaction Data Table */}
+        {transactions && categories && (
+          <TransactionDataTable
+            transactions={transactions}
+            categories={categories}
+          />
+        )}
+
+        {/* Import Dialog */}
         <Dialog open={isImportOpen} onOpenChange={setIsImportOpen}>
-          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-[calc(100vw-4rem)] w-[1400px] h-[85vh] flex flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle>Import Transactions</DialogTitle>
               <DialogDescription>
@@ -119,6 +152,15 @@ export default function TransactionsPage() {
             />
           </DialogContent>
         </Dialog>
+
+        {/* Add Transaction Dialog */}
+        {categories && (
+          <AddTransactionDialog
+            open={isAddOpen}
+            onOpenChange={setIsAddOpen}
+            categories={categories}
+          />
+        )}
       </div>
     </>
   );
