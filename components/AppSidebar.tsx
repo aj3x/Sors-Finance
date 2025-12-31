@@ -16,6 +16,7 @@ import {
   BarChart3,
   ChevronRight,
   Settings,
+  Loader2,
 } from "lucide-react";
 import {
   Sidebar,
@@ -38,6 +39,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Progress } from "@/components/ui/progress";
+import { useSnapshot } from "@/lib/snapshot-context";
 
 const navItems = [
   {
@@ -72,6 +75,11 @@ const portfolioSubItems = [
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { progress, isSnapshotInProgress } = useSnapshot();
+
+  const progressPercent = progress.total > 0
+    ? Math.round((progress.completed / progress.total) * 100)
+    : 0;
 
   return (
     <Sidebar collapsible="icon">
@@ -163,8 +171,26 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      {process.env.NODE_ENV === "development" && (
-        <SidebarFooter className="border-t border-sidebar-border">
+      <SidebarFooter className="border-t border-sidebar-border">
+        {/* Snapshot Progress Indicator */}
+        {isSnapshotInProgress && (
+          <div className="px-3 py-2 group-data-[collapsible=icon]:px-2">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground group-data-[collapsible=icon]:justify-center">
+              <Loader2 className="h-3 w-3 animate-spin shrink-0" />
+              <span className="group-data-[collapsible=icon]:hidden truncate">
+                Updating prices...
+              </span>
+            </div>
+            <div className="mt-1 group-data-[collapsible=icon]:hidden">
+              <Progress value={progressPercent} className="h-1" />
+              <div className="flex justify-between text-[10px] text-muted-foreground mt-0.5">
+                <span>{progress.currentTicker}</span>
+                <span>{progress.completed}/{progress.total}</span>
+              </div>
+            </div>
+          </div>
+        )}
+        {process.env.NODE_ENV === "development" && (
           <SidebarMenu>
             <SidebarMenuItem>
               <SidebarMenuButton
@@ -179,8 +205,8 @@ export function AppSidebar() {
               </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
-        </SidebarFooter>
-      )}
+        )}
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );

@@ -8,7 +8,6 @@ import {
   Wallet,
   CreditCard,
   Loader2,
-  AlertTriangle,
   ChevronDown,
   History,
   Trash2,
@@ -46,15 +45,14 @@ import {
   useNetWorthSummary,
   useNetWorthChange,
   usePortfolioSnapshots,
-  createSnapshotWithPriceRefresh,
   deletePortfolioSnapshot,
   BUCKET_TYPES,
-  type SnapshotResult,
   type DbPortfolioSnapshot,
 } from "@/lib/hooks/useDatabase";
 import { db } from "@/lib/db";
 import { usePrivacy } from "@/lib/privacy-context";
 import { useSetPageHeader } from "@/lib/page-header-context";
+import { useSnapshot } from "@/lib/snapshot-context";
 import { BucketCard, EditSnapshotDialog } from "@/components/portfolio";
 import { toast } from "sonner";
 
@@ -103,9 +101,9 @@ export default function PortfolioPage() {
   const summary = useNetWorthSummary();
   const change = useNetWorthChange();
   const allSnapshots = usePortfolioSnapshots();
+  const { startBackgroundSnapshot } = useSnapshot();
 
   // Snapshot state
-  const [snapshotError, setSnapshotError] = useState<SnapshotResult | null>(null);
   const autoSnapshotAttempted = useRef(false);
   const [editingSnapshot, setEditingSnapshot] = useState<DbPortfolioSnapshot | null>(null);
 
@@ -123,49 +121,29 @@ export default function PortfolioPage() {
 
     autoSnapshotAttempted.current = true;
 
-    const autoSnapshot = async () => {
-      const currentNetWorth = summary?.netWorth ?? 0;
-      const latestSnapshotNetWorth = latestSnapshot?.netWorth ?? 0;
+    const currentNetWorth = summary?.netWorth ?? 0;
+    const latestSnapshotNetWorth = latestSnapshot?.netWorth ?? 0;
 
-      // Check if latest snapshot is from today
-      const today = new Date();
-      const isSnapshotFromToday = latestSnapshot &&
-        latestSnapshot.date.getFullYear() === today.getFullYear() &&
-        latestSnapshot.date.getMonth() === today.getMonth() &&
-        latestSnapshot.date.getDate() === today.getDate();
+    // Check if latest snapshot is from today
+    const today = new Date();
+    const isSnapshotFromToday = latestSnapshot &&
+      latestSnapshot.date.getFullYear() === today.getFullYear() &&
+      latestSnapshot.date.getMonth() === today.getMonth() &&
+      latestSnapshot.date.getDate() === today.getDate();
 
-      // Check if net worth has changed (use small epsilon for float comparison)
-      const hasChanged = Math.abs(currentNetWorth - latestSnapshotNetWorth) > 0.01;
+    // Check if net worth has changed (use small epsilon for float comparison)
+    const hasChanged = Math.abs(currentNetWorth - latestSnapshotNetWorth) > 0.01;
 
-      // If today's snapshot exists but net worth changed, update it
-      if (isSnapshotFromToday && hasChanged) {
-        setSnapshotError(null);
-
-        const result = await createSnapshotWithPriceRefresh({ forceUpdate: true });
-
-        if (result.success) {
-          toast.success("Portfolio snapshot updated");
-        } else {
-          setSnapshotError(result);
-        }
-      }
-      // If no snapshot today, create one (normal behavior)
-      else if (!isSnapshotFromToday) {
-        setSnapshotError(null);
-
-        const result = await createSnapshotWithPriceRefresh();
-
-        if (result.success && !result.alreadyExists) {
-          toast.success("Portfolio snapshot saved");
-        } else if (!result.success) {
-          setSnapshotError(result);
-        }
-      }
-      // If today's snapshot exists and net worth matches, do nothing
-    };
-
-    autoSnapshot();
-  }, [summary, latestSnapshot]);
+    // If today's snapshot exists but net worth changed, update it
+    if (isSnapshotFromToday && hasChanged) {
+      startBackgroundSnapshot({ forceUpdate: true });
+    }
+    // If no snapshot today, create one (normal behavior)
+    else if (!isSnapshotFromToday) {
+      startBackgroundSnapshot();
+    }
+    // If today's snapshot exists and net worth matches, do nothing
+  }, [summary, latestSnapshot, startBackgroundSnapshot]);
 
   const handleDeleteSnapshot = useCallback(async (id: number) => {
     try {
@@ -258,33 +236,6 @@ export default function PortfolioPage() {
         <p className="text-muted-foreground">Track your net worth</p>
         <div ref={sentinelRef} className="h-0" />
       </div>
-
-      {/* Ticker Price Error Warning */}
-      {snapshotError && snapshotError.priceRefreshResult?.failed && snapshotError.priceRefreshResult.failed.length > 0 && (
-        <Card className="border-yellow-500/50 bg-yellow-500/10">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-yellow-500" />
-              Failed to Update Prices
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm">
-            <p className="text-muted-foreground mb-2">
-              Could not fetch prices for the following tickers. Snapshot was not saved.
-            </p>
-            <ul className="list-disc list-inside space-y-1">
-              {snapshotError.priceRefreshResult.failed.map((f, i) => (
-                <li key={i}>
-                  <span className="font-mono">{f.ticker}</span> ({f.itemName}): {f.error}
-                </li>
-              ))}
-            </ul>
-            <p className="text-muted-foreground mt-2">
-              To resolve: Edit these items and either fix the ticker symbol or switch to manual price mode.
-            </p>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">

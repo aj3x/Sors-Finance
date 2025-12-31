@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useState, useEffect, useRef } from "react";
+import { useSnapshot } from "@/lib/snapshot-context";
 import {
   TrendingUp,
   TrendingDown,
@@ -57,11 +58,6 @@ import {
   useAllTimeSpendingByCategory,
   useAllTimeMonthlyTrend,
 } from "@/lib/hooks";
-import {
-  usePortfolioSnapshots,
-  createSnapshotWithPriceRefresh,
-} from "@/lib/hooks/useDatabase";
-import { toast } from "sonner";
 import { usePrivacy } from "@/lib/privacy-context";
 import { useSetPageHeader } from "@/lib/page-header-context";
 import { cn } from "@/lib/utils";
@@ -292,41 +288,17 @@ export default function DashboardPage() {
   // View mode: "all", "year", or "month"
   const [viewMode, setViewMode] = useState<"all" | "year" | "month">("year");
 
-  // Auto-snapshot logic - ensure daily snapshot exists
-  const allSnapshots = usePortfolioSnapshots();
+  // Auto-snapshot logic - ensure daily snapshot exists (runs in background with rate limiting)
+  const { startBackgroundSnapshot } = useSnapshot();
   const autoSnapshotAttempted = useRef(false);
-
-  const latestSnapshot = useMemo(() => {
-    if (!allSnapshots || allSnapshots.length === 0) return null;
-    return allSnapshots[0];
-  }, [allSnapshots]);
 
   useEffect(() => {
     if (autoSnapshotAttempted.current) return;
-    if (allSnapshots === undefined) return; // Wait for snapshots to load
-
     autoSnapshotAttempted.current = true;
 
-    const autoSnapshot = async () => {
-      // Check if latest snapshot is from today
-      const today = new Date();
-      const isSnapshotFromToday = latestSnapshot &&
-        latestSnapshot.date.getFullYear() === today.getFullYear() &&
-        latestSnapshot.date.getMonth() === today.getMonth() &&
-        latestSnapshot.date.getDate() === today.getDate();
-
-      // If no snapshot today, create one
-      if (!isSnapshotFromToday) {
-        const result = await createSnapshotWithPriceRefresh();
-
-        if (result.success && !result.alreadyExists) {
-          toast.success("Portfolio snapshot saved");
-        }
-      }
-    };
-
-    autoSnapshot();
-  }, [allSnapshots, latestSnapshot]);
+    // Start background snapshot - it will check if one already exists today
+    startBackgroundSnapshot();
+  }, [startBackgroundSnapshot]);
 
   // Selection values
   const [selectedYearValue, setSelectedYearValue] = useState(currentYear);
