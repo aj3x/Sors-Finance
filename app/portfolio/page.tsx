@@ -4,7 +4,6 @@ import { useMemo, useEffect, useState, useRef, useCallback } from "react";
 import {
   TrendingUp,
   TrendingDown,
-  Camera,
   DollarSign,
   Wallet,
   CreditCard,
@@ -13,6 +12,7 @@ import {
   ChevronDown,
   History,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import {
   Area,
@@ -50,10 +50,12 @@ import {
   deletePortfolioSnapshot,
   BUCKET_TYPES,
   type SnapshotResult,
+  type DbPortfolioSnapshot,
 } from "@/lib/hooks/useDatabase";
+import { db } from "@/lib/db";
 import { usePrivacy } from "@/lib/privacy-context";
 import { useSetPageHeader } from "@/lib/page-header-context";
-import { BucketCard } from "@/components/portfolio";
+import { BucketCard, EditSnapshotDialog } from "@/components/portfolio";
 import { toast } from "sonner";
 
 const BUCKET_COLORS: Record<string, string> = {
@@ -103,9 +105,9 @@ export default function PortfolioPage() {
   const allSnapshots = usePortfolioSnapshots();
 
   // Snapshot state
-  const [isSnapshotting, setIsSnapshotting] = useState(false);
   const [snapshotError, setSnapshotError] = useState<SnapshotResult | null>(null);
   const autoSnapshotAttempted = useRef(false);
+  const [editingSnapshot, setEditingSnapshot] = useState<DbPortfolioSnapshot | null>(null);
 
   // Get the latest snapshot to compare with current net worth
   const latestSnapshot = useMemo(() => {
@@ -137,7 +139,6 @@ export default function PortfolioPage() {
 
       // If today's snapshot exists but net worth changed, update it
       if (isSnapshotFromToday && hasChanged) {
-        setIsSnapshotting(true);
         setSnapshotError(null);
 
         const result = await createSnapshotWithPriceRefresh({ forceUpdate: true });
@@ -147,12 +148,9 @@ export default function PortfolioPage() {
         } else {
           setSnapshotError(result);
         }
-
-        setIsSnapshotting(false);
       }
       // If no snapshot today, create one (normal behavior)
       else if (!isSnapshotFromToday) {
-        setIsSnapshotting(true);
         setSnapshotError(null);
 
         const result = await createSnapshotWithPriceRefresh();
@@ -162,8 +160,6 @@ export default function PortfolioPage() {
         } else if (!result.success) {
           setSnapshotError(result);
         }
-
-        setIsSnapshotting(false);
       }
       // If today's snapshot exists and net worth matches, do nothing
     };
@@ -171,46 +167,45 @@ export default function PortfolioPage() {
     autoSnapshot();
   }, [summary, latestSnapshot]);
 
-  const handleSnapshot = useCallback(async () => {
-    setIsSnapshotting(true);
-    setSnapshotError(null);
-
-    // Use forceUpdate: true to replace existing snapshot for today
-    const result = await createSnapshotWithPriceRefresh({ forceUpdate: true });
-
-    if (result.success) {
-      toast.success("Snapshot updated");
-    } else {
-      setSnapshotError(result);
-      toast.error(result.error || "Failed to save snapshot");
-    }
-
-    setIsSnapshotting(false);
-  }, []);
-
   const handleDeleteSnapshot = useCallback(async (id: number) => {
     try {
+      // Get snapshot data before deleting (for undo)
+      const snapshot = allSnapshots?.find(s => s.id === id);
+      if (!snapshot) return;
+
       await deletePortfolioSnapshot(id);
-      toast.success("Snapshot deleted");
+
+      toast.success("Snapshot deleted", {
+        action: {
+          label: "Undo",
+          onClick: async () => {
+            try {
+              // Re-create the snapshot
+              await db.portfolioSnapshots.add({
+                uuid: snapshot.uuid,
+                date: snapshot.date,
+                totalSavings: snapshot.totalSavings,
+                totalInvestments: snapshot.totalInvestments,
+                totalAssets: snapshot.totalAssets,
+                totalDebt: snapshot.totalDebt,
+                netWorth: snapshot.netWorth,
+                details: snapshot.details,
+                createdAt: snapshot.createdAt,
+              });
+              toast.success("Snapshot restored");
+            } catch {
+              toast.error("Failed to restore snapshot");
+            }
+          },
+        },
+      });
     } catch (error) {
       toast.error("Failed to delete snapshot");
       console.error(error);
     }
-  }, []);
+  }, [allSnapshots]);
 
-  // Header actions - memoized to prevent infinite re-renders
-  const headerActions = useMemo(() => (
-    <Button size="sm" onClick={handleSnapshot} disabled={isSnapshotting}>
-      {isSnapshotting ? (
-        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-      ) : (
-        <Camera className="h-4 w-4 mr-2" />
-      )}
-      Snapshot
-    </Button>
-  ), [handleSnapshot, isSnapshotting]);
-
-  const sentinelRef = useSetPageHeader("Portfolio", headerActions);
+  const sentinelRef = useSetPageHeader("Portfolio", null);
 
   // Transform snapshot data for chart (use allSnapshots, limit to last 12 months)
   const trendData = useMemo(() => {
@@ -258,20 +253,10 @@ export default function PortfolioPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Portfolio</h1>
-          <p className="text-muted-foreground">Track your net worth</p>
-          <div ref={sentinelRef} className="h-0" />
-        </div>
-        <Button onClick={handleSnapshot} disabled={isSnapshotting}>
-          {isSnapshotting ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Camera className="h-4 w-4 mr-2" />
-          )}
-          Take Snapshot
-        </Button>
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Portfolio</h1>
+        <p className="text-muted-foreground">Track your net worth</p>
+        <div ref={sentinelRef} className="h-0" />
       </div>
 
       {/* Ticker Price Error Warning */}
@@ -535,7 +520,7 @@ export default function PortfolioPage() {
                   <History className="h-10 w-10 text-muted-foreground mb-3" />
                   <p className="font-medium">No snapshots yet</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Click &quot;Take Snapshot&quot; to save your first portfolio snapshot
+                    Snapshots are automatically saved when you visit this page
                   </p>
                 </div>
               ) : (
@@ -574,14 +559,33 @@ export default function PortfolioPage() {
                           </span>
                         </div>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={() => handleDeleteSnapshot(snapshot.id!)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex gap-1">
+                        {(() => {
+                          const today = new Date();
+                          const isToday =
+                            snapshot.date.getFullYear() === today.getFullYear() &&
+                            snapshot.date.getMonth() === today.getMonth() &&
+                            snapshot.date.getDate() === today.getDate();
+                          return !isToday ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={() => setEditingSnapshot(snapshot)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          ) : null;
+                        })()}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-muted-foreground hover:text-destructive"
+                          onClick={() => handleDeleteSnapshot(snapshot.id!)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -590,6 +594,15 @@ export default function PortfolioPage() {
           </CollapsibleContent>
         </Card>
       </Collapsible>
+
+      {/* Edit Snapshot Dialog */}
+      {editingSnapshot && (
+        <EditSnapshotDialog
+          open={!!editingSnapshot}
+          onOpenChange={(open) => !open && setEditingSnapshot(null)}
+          snapshot={editingSnapshot}
+        />
+      )}
     </div>
   );
 }

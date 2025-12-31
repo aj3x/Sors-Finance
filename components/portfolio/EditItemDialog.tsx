@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { Loader2, RefreshCw, Search } from "lucide-react";
+import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
+import { Loader2, RefreshCw, Search, AlertTriangle } from "lucide-react";
+import Link from "next/link";
 import {
   Dialog,
   DialogContent,
@@ -16,8 +17,19 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { updatePortfolioItem, DbPortfolioItem, BucketType, PriceMode } from "@/lib/hooks/useDatabase";
 import { lookupTicker, getExchangeRate } from "@/lib/hooks/useStockPrice";
+import { hasFinnhubApiKey } from "@/lib/settingsStore";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
+// Hook to check API key status
+function useHasApiKey() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => hasFinnhubApiKey(),
+    () => true
+  );
+}
 
 interface EditItemDialogProps {
   open: boolean;
@@ -28,6 +40,7 @@ interface EditItemDialogProps {
 
 export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDialogProps) {
   const isInvestment = bucket === "Investments";
+  const hasApiKey = useHasApiKey();
 
   // Basic fields
   const [name, setName] = useState(item.name);
@@ -88,6 +101,13 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
       return;
     }
 
+    // Check for API key first
+    if (!hasApiKey) {
+      setTickerError("Finnhub API key not configured. Go to Settings to add your API key, or use Manual mode.");
+      toast.error("API key required for ticker lookup. Configure in Settings or switch to Manual mode.");
+      return;
+    }
+
     setIsLookingUp(true);
     setTickerError(null);
 
@@ -108,10 +128,10 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
 
         setTicker(quote.ticker);
       } else {
-        setTickerError("Ticker not found");
+        setTickerError("Ticker not found. Check the symbol or try Manual mode.");
       }
     } catch {
-      setTickerError("Failed to lookup ticker");
+      setTickerError("Failed to lookup ticker. Check your API key in Settings.");
     } finally {
       setIsLookingUp(false);
     }
@@ -221,9 +241,21 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {priceMode === "ticker"
-                    ? "Price updates automatically from Yahoo Finance"
+                    ? "Price updates automatically via Finnhub (requires API key)"
                     : "You enter and update the price manually"}
                 </p>
+                {priceMode === "ticker" && !hasApiKey && (
+                  <Alert className="mt-2 border-yellow-500/50 bg-yellow-500/10">
+                    <AlertTriangle className="h-4 w-4 text-yellow-500" />
+                    <AlertDescription className="text-xs">
+                      <strong>API key required.</strong> Ticker lookup won&apos;t work without a Finnhub API key.{" "}
+                      <Link href="/settings" className="underline font-medium">
+                        Add API key in Settings
+                      </Link>{" "}
+                      or switch to Manual mode.
+                    </AlertDescription>
+                  </Alert>
+                )}
               </div>
             )}
 
@@ -239,7 +271,7 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
                       onChange={(e) => setTicker(e.target.value.toUpperCase())}
                       onBlur={handleTickerLookup}
                       onKeyDown={handleTickerKeyDown}
-                      placeholder="e.g., AAPL, BTC-USD"
+                      placeholder="e.g., AAPL, MSFT"
                       className={tickerError ? "border-destructive" : ""}
                     />
                     {isLookingUp && (
@@ -251,7 +283,8 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
                     variant="outline"
                     size="icon"
                     onClick={handleTickerLookup}
-                    disabled={isLookingUp || !ticker.trim()}
+                    disabled={isLookingUp || !ticker.trim() || !hasApiKey}
+                    title={!hasApiKey ? "API key required - Go to Settings" : "Search ticker"}
                   >
                     <Search className="h-4 w-4" />
                   </Button>
@@ -259,6 +292,9 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
                 {tickerError && (
                   <p className="text-xs text-destructive">{tickerError}</p>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  Uses US stock tickers (e.g., AAPL, GOOGL, MSFT)
+                </p>
               </div>
             )}
 
@@ -380,7 +416,11 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isSubmitting || !name.trim()}>
+            <Button
+              type="submit"
+              disabled={isSubmitting || !name.trim() || (isInvestment && priceMode === "ticker" && !hasApiKey)}
+              title={isInvestment && priceMode === "ticker" && !hasApiKey ? "API key required for Ticker mode" : undefined}
+            >
               {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
           </DialogFooter>

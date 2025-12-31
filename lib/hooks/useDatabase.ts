@@ -449,6 +449,7 @@ export {
   reorderPortfolioItems,
   createPortfolioSnapshot,
   deletePortfolioSnapshot,
+  updatePortfolioSnapshot,
   getTickerModeItems,
   hasSnapshotToday,
   getTodaySnapshot,

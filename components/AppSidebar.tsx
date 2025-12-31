@@ -15,6 +15,7 @@ import {
   CreditCard,
   BarChart3,
   ChevronRight,
+  Settings,
 } from "lucide-react";
 import {
   Sidebar,
@@ -53,6 +54,11 @@ const navItems = [
     title: "Categories",
     url: "/categories",
     icon: Tags,
+  },
+  {
+    title: "Settings",
+    url: "/settings",
+    icon: Settings,
   },
 ];
 

@@ -65,15 +65,8 @@ export function BucketCard({ bucket }: BucketCardProps) {
   return (
     <Card className="group hover:shadow-md transition-shadow">
       <CardContent className="p-4">
-        <div className="flex items-start justify-between">
-          <div className={cn("p-2 rounded-lg", config.bgColor)}>
-            <Icon className={cn("h-5 w-5", config.color)} />
-          </div>
-          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity" asChild>
-            <Link href={config.href}>
-              <ArrowRight className="h-4 w-4" />
-            </Link>
-          </Button>
+        <div className={cn("p-2 rounded-lg w-fit", config.bgColor)}>
+          <Icon className={cn("h-5 w-5", config.color)} />
         </div>
         <div className="mt-3">
           <p className="text-sm text-muted-foreground">{bucket}</p>

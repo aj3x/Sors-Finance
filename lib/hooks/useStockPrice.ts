@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { getFinnhubApiKey } from '@/lib/settingsStore';
 
 export interface StockQuote {
   ticker: string;
@@ -8,6 +9,11 @@ export interface StockQuote {
   change: number;
   previousClose?: number;
   marketState?: string;
+}
+
+export interface StockApiError {
+  error: string;
+  code?: 'NO_API_KEY' | 'INVALID_API_KEY' | 'RATE_LIMIT';
 }
 
 export interface ExchangeRate {
@@ -52,10 +58,17 @@ export function useStockPrice(ticker: string | undefined) {
     setError(null);
 
     try {
-      const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`);
+      const apiKey = getFinnhubApiKey();
+
+      const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`, {
+        headers: apiKey ? { 'x-finnhub-key': apiKey } : {},
+      });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData: StockApiError = await response.json();
+        if (errorData.code === 'NO_API_KEY') {
+          throw new Error('Finnhub API key not configured. Go to Settings to add your API key.');
+        }
         throw new Error(errorData.error || 'Failed to fetch stock price');
       }
 
@@ -177,7 +190,11 @@ export async function lookupTicker(ticker: string): Promise<StockQuote | null> {
   }
 
   try {
-    const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`);
+    const apiKey = getFinnhubApiKey();
+
+    const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`, {
+      headers: apiKey ? { 'x-finnhub-key': apiKey } : {},
+    });
 
     if (!response.ok) {
       return null;
@@ -192,6 +209,12 @@ export async function lookupTicker(ticker: string): Promise<StockQuote | null> {
   } catch {
     return null;
   }
+}
+
+// Check if API key is configured
+export function hasApiKey(): boolean {
+  const key = getFinnhubApiKey();
+  return Boolean(key && key.trim().length > 0);
 }
 
 // Utility function to get exchange rate (for one-time lookups in forms)

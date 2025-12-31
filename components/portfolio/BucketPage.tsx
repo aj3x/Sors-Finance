@@ -11,7 +11,7 @@ import {
 } from "@/lib/hooks/useDatabase";
 import { usePrivacy } from "@/lib/privacy-context";
 import { useSetPageHeader } from "@/lib/page-header-context";
-import { AccountSection, AddAccountDialog } from "@/components/portfolio";
+import { AccountSection, AddAccountDialog, ApiKeyBanner } from "@/components/portfolio";
 
 interface BucketPageProps {
   bucket: BucketType;
@@ -87,6 +87,9 @@ export function BucketPage({ bucket, description }: BucketPageProps) {
       <div className="text-lg">
         Total: <span className="font-bold text-2xl">{formatAmount(total ?? 0, formatCurrency)}</span>
       </div>
+
+      {/* API Key Banner for Investments */}
+      {bucket === "Investments" && <ApiKeyBanner />}
 
       {/* Accounts */}
       <div className="space-y-4">

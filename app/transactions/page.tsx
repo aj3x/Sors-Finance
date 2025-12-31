@@ -19,7 +19,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import { TransactionImporter } from "@/components/TransactionImporter";
 import { TransactionDataTable } from "@/components/TransactionDataTable";
 import { AddTransactionDialog } from "@/components/AddTransactionDialog";
@@ -111,7 +111,6 @@ export default function TransactionsPage() {
 
   return (
     <>
-      <Toaster position="bottom-right" richColors />
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>

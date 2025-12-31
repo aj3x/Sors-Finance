@@ -22,7 +22,7 @@ import {
   recategorizeTransactions,
   RecategorizeMode,
 } from "@/lib/hooks";
-import { toast, Toaster } from "sonner";
+import { toast } from "sonner";
 
 export default function CategoriesPage() {
   const categories = useCategories();
@@ -155,7 +155,6 @@ export default function CategoriesPage() {
 
   return (
     <>
-      <Toaster position="bottom-right" richColors />
       <div className="p-6 space-y-6">
         <div className="flex items-start justify-between">
           <div>

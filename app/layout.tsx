@@ -5,6 +5,7 @@ import { SidebarLayout } from "@/components/SidebarLayout";
 import { ThemeProvider } from "@/components/theme-provider";
 import { DatabaseProvider } from "@/components/DatabaseProvider";
 import { PrivacyProvider } from "@/lib/privacy-context";
+import { Toaster } from "sonner";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
@@ -42,6 +43,7 @@ export default function RootLayout({
           <DatabaseProvider>
             <PrivacyProvider>
               <SidebarLayout>{children}</SidebarLayout>
+              <Toaster richColors />
             </PrivacyProvider>
           </DatabaseProvider>
         </ThemeProvider>

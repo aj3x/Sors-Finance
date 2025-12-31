@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { MoreHorizontal, Pencil, Trash2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import { usePrivacy } from "@/lib/privacy-context";
 import { EditItemDialog } from "./EditItemDialog";
 import { toast } from "sonner";
 import { lookupTicker, getExchangeRate } from "@/lib/hooks/useStockPrice";
+import { hasFinnhubApiKey } from "@/lib/settingsStore";
 
 interface PortfolioItemProps {
   item: DbPortfolioItem;
@@ -56,9 +57,19 @@ function getTimeAgo(date: Date): string {
   return `${diffDays} days ago`;
 }
 
+// Use useSyncExternalStore for client-side localStorage check
+function useHasApiKey() {
+  return useSyncExternalStore(
+    () => () => {},
+    () => hasFinnhubApiKey(),
+    () => true
+  );
+}
+
 export function PortfolioItem({ item, bucket }: PortfolioItemProps) {
   const [showEdit, setShowEdit] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const apiKeyConfigured = useHasApiKey();
   const { formatAmount } = usePrivacy();
 
   const hasTicker = Boolean(item.ticker);
@@ -75,6 +86,11 @@ export function PortfolioItem({ item, bucket }: PortfolioItemProps) {
 
   const handleRefreshPrice = async () => {
     if (!item.ticker) return;
+
+    if (!apiKeyConfigured) {
+      toast.error("Finnhub API key not configured. Go to Settings to add your API key.");
+      return;
+    }
 
     setIsRefreshing(true);
     try {
@@ -96,7 +112,7 @@ export function PortfolioItem({ item, bucket }: PortfolioItemProps) {
 
         toast.success("Price updated");
       } else {
-        toast.error("Failed to fetch price");
+        toast.error("Failed to fetch price. Check your API key in Settings.");
       }
     } catch (error) {
       toast.error("Failed to refresh price");
@@ -130,10 +146,12 @@ export function PortfolioItem({ item, bucket }: PortfolioItemProps) {
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity"
+              className={`h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity ${
+                !apiKeyConfigured ? "text-muted-foreground" : ""
+              }`}
               onClick={handleRefreshPrice}
               disabled={isRefreshing}
-              title="Refresh price"
+              title={apiKeyConfigured ? "Refresh price" : "API key not configured - Go to Settings"}
             >
               <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
             </Button>

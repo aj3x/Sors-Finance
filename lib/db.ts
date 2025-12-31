@@ -1285,6 +1285,29 @@ export async function deletePortfolioSnapshot(id: number): Promise<void> {
   await db.portfolioSnapshots.delete(id);
 }
 
+export async function updatePortfolioSnapshot(
+  id: number,
+  updates: Partial<Pick<DbPortfolioSnapshot, 'totalSavings' | 'totalInvestments' | 'totalAssets' | 'totalDebt'>>
+): Promise<void> {
+  // Recalculate net worth if any bucket totals changed
+  const snapshot = await db.portfolioSnapshots.get(id);
+  if (!snapshot) return;
+
+  const newTotals = {
+    totalSavings: updates.totalSavings ?? snapshot.totalSavings,
+    totalInvestments: updates.totalInvestments ?? snapshot.totalInvestments,
+    totalAssets: updates.totalAssets ?? snapshot.totalAssets,
+    totalDebt: updates.totalDebt ?? snapshot.totalDebt,
+  };
+
+  const netWorth = newTotals.totalSavings + newTotals.totalInvestments + newTotals.totalAssets - newTotals.totalDebt;
+
+  await db.portfolioSnapshots.update(id, {
+    ...newTotals,
+    netWorth,
+  });
+}
+
 export async function getNetWorthChange(): Promise<{
   current: number;
   previous: number;

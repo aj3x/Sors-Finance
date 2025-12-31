@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import YahooFinance from 'yahoo-finance2';
-
-// Create instance for v3
-const yahooFinance = new YahooFinance();
 
 // Cache exchange rates for 1 hour
 const rateCache = new Map<string, { rate: number; timestamp: number }>();
 const CACHE_DURATION = 60 * 60 * 1000; // 1 hour
+
+interface FrankfurterResponse {
+  amount: number;
+  base: string;
+  date: string;
+  rates: Record<string, number>;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,29 +35,32 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Fetch from Yahoo Finance using currency pair format
-    // e.g., USDCAD=X for USD to CAD
-    const ticker = `${from}${to}=X`;
-    const quote = await yahooFinance.quote(ticker);
+    // Fetch from Frankfurter API (free, no API key required)
+    // https://www.frankfurter.app/docs/
+    const response = await fetch(
+      `https://api.frankfurter.app/latest?from=${from}&to=${to}`
+    );
 
-    if (!quote || quote.regularMarketPrice === undefined) {
-      // Try reverse pair and invert
-      const reverseTicker = `${to}${from}=X`;
-      const reverseQuote = await yahooFinance.quote(reverseTicker);
-
-      if (reverseQuote && reverseQuote.regularMarketPrice) {
-        const rate = 1 / reverseQuote.regularMarketPrice;
-        rateCache.set(cacheKey, { rate, timestamp: Date.now() });
-        return NextResponse.json({ rate, from, to });
-      }
-
+    if (!response.ok) {
+      // Try to get error message
+      const errorText = await response.text();
+      console.error('Frankfurter API error:', errorText);
       return NextResponse.json(
         { error: 'Exchange rate not found' },
         { status: 404 }
       );
     }
 
-    const rate = quote.regularMarketPrice;
+    const data: FrankfurterResponse = await response.json();
+
+    if (!data.rates || data.rates[to] === undefined) {
+      return NextResponse.json(
+        { error: 'Exchange rate not found' },
+        { status: 404 }
+      );
+    }
+
+    const rate = data.rates[to];
 
     // Cache the result
     rateCache.set(cacheKey, { rate, timestamp: Date.now() });
