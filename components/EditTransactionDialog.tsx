@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Label } from "@/components/ui/label";
 import {
   Dialog,
@@ -167,14 +168,11 @@ export function EditTransactionDialog({
           {/* Amount */}
           <div className="space-y-2">
             <Label htmlFor="edit-amount">Amount (CAD)</Label>
-            <Input
+            <CurrencyInput
               id="edit-amount"
-              type="number"
-              step="0.01"
-              min="0"
               placeholder="0.00"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={setAmount}
             />
           </div>
 

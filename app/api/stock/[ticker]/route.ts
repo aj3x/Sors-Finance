@@ -11,6 +11,21 @@ interface FinnhubQuote {
   t: number;  // Timestamp
 }
 
+interface FinnhubProfile {
+  name: string;
+  ticker: string;
+  country: string;
+  currency: string;
+  exchange: string;
+  ipo: string;
+  marketCapitalization: number;
+  shareOutstanding: number;
+  logo: string;
+  phone: string;
+  weburl: string;
+  finnhubIndustry: string;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ ticker: string }> }
@@ -33,33 +48,36 @@ export async function GET(
       );
     }
 
-    // Fetch quote from Finnhub
-    const response = await fetch(
-      `https://finnhub.io/api/v1/quote?symbol=${ticker.toUpperCase()}&token=${apiKey}`
-    );
+    const upperTicker = ticker.toUpperCase();
 
-    if (response.status === 401) {
+    // Fetch quote and profile in parallel
+    const [quoteResponse, profileResponse] = await Promise.all([
+      fetch(`https://finnhub.io/api/v1/quote?symbol=${upperTicker}&token=${apiKey}`),
+      fetch(`https://finnhub.io/api/v1/stock/profile2?symbol=${upperTicker}&token=${apiKey}`),
+    ]);
+
+    if (quoteResponse.status === 401) {
       return NextResponse.json(
         { error: 'Invalid API key', code: 'INVALID_API_KEY' },
         { status: 401 }
       );
     }
 
-    if (response.status === 429) {
+    if (quoteResponse.status === 429 || profileResponse.status === 429) {
       return NextResponse.json(
         { error: 'Rate limit exceeded. Try again later.', code: 'RATE_LIMIT' },
         { status: 429 }
       );
     }
 
-    if (!response.ok) {
+    if (!quoteResponse.ok) {
       return NextResponse.json(
         { error: 'Failed to fetch stock data' },
         { status: 500 }
       );
     }
 
-    const quote: FinnhubQuote = await response.json();
+    const quote: FinnhubQuote = await quoteResponse.json();
 
     // Finnhub returns 0 for all values if ticker not found
     if (quote.c === 0 && quote.pc === 0 && quote.t === 0) {
@@ -69,14 +87,28 @@ export async function GET(
       );
     }
 
+    // Try to get company profile for the name
+    let companyName = upperTicker;
+    let currency = 'USD';
+
+    if (profileResponse.ok) {
+      const profile: FinnhubProfile = await profileResponse.json();
+      if (profile.name) {
+        companyName = profile.name;
+      }
+      if (profile.currency) {
+        currency = profile.currency;
+      }
+    }
+
     return NextResponse.json({
-      ticker: ticker.toUpperCase(),
+      ticker: upperTicker,
       price: quote.c,
-      currency: 'USD', // Finnhub returns USD prices for US stocks
-      name: ticker.toUpperCase(), // Finnhub quote doesn't include name
+      currency,
+      name: companyName,
       change: quote.dp,
       previousClose: quote.pc,
-      marketState: 'open', // Finnhub doesn't provide market state in quote
+      marketState: 'open',
     });
   } catch (error) {
     console.error('Finnhub error:', error);

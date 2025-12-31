@@ -361,9 +361,9 @@ export default function DashboardPage() {
     setSelectedMonthValue({ year, month });
   }, []);
 
-  // Memoized available years
+  // Memoized available years - use currentYear if no data exists
   const availableYears = useMemo(
-    () => availablePeriods?.years ?? [currentYear],
+    () => (availablePeriods?.years?.length ? availablePeriods.years : [currentYear]),
     [availablePeriods?.years, currentYear]
   );
 
@@ -379,11 +379,11 @@ export default function DashboardPage() {
       </Tabs>
       {viewMode === "year" && (
         <Select value={`${selectedYearValue}`} onValueChange={(v) => setSelectedYearValue(parseInt(v))}>
-          <SelectTrigger size="sm" className="w-[80px]">
+          <SelectTrigger size="sm" className="w-[85px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {(availablePeriods?.years ?? [currentYear]).map((year) => (
+            {availableYears.map((year) => (
               <SelectItem key={year} value={`${year}`}>{year}</SelectItem>
             ))}
           </SelectContent>
@@ -496,7 +496,7 @@ export default function DashboardPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(availablePeriods?.years ?? [currentYear]).map((year) => (
+                {availableYears.map((year) => (
                   <SelectItem key={year} value={`${year}`}>{year}</SelectItem>
                 ))}
               </SelectContent>
@@ -609,7 +609,7 @@ export default function DashboardPage() {
           <CardContent>
             {categorySpendingData.length === 0 ? (
               <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                No spending data yet. Import transactions to see your spending breakdown.
+                No spending data yet.
               </div>
             ) : (
             <ChartContainer config={barChartConfig} className="h-[300px] w-full">

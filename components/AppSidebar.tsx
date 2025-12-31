@@ -8,7 +8,6 @@ import {
   Wallet,
   DollarSign,
   Tags,
-  Code2,
   TrendingUp,
   PiggyBank,
   Home,
@@ -57,11 +56,6 @@ const navItems = [
     title: "Categories",
     url: "/categories",
     icon: Tags,
-  },
-  {
-    title: "Settings",
-    url: "/settings",
-    icon: Settings,
   },
 ];
 
@@ -190,22 +184,20 @@ export function AppSidebar() {
             </div>
           </div>
         )}
-        {process.env.NODE_ENV === "development" && (
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                asChild
-                isActive={pathname === "/dev"}
-                tooltip="Developer"
-              >
-                <Link href="/dev">
-                  <Code2 />
-                  <span>Developer</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        )}
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              isActive={pathname.startsWith("/settings")}
+              tooltip="Settings"
+            >
+              <Link href="/settings">
+                <Settings />
+                <span>Settings</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

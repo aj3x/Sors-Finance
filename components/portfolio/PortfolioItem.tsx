@@ -139,9 +139,6 @@ export function PortfolioItem({ item, bucket }: PortfolioItemProps) {
           ) : null}
         </div>
         <div className="flex items-center gap-2 ml-4">
-          <span className="font-semibold tabular-nums">
-            {formatAmount(item.currentValue, formatCurrency)}
-          </span>
           {hasTicker && (
             <Button
               variant="ghost"
@@ -156,6 +153,9 @@ export function PortfolioItem({ item, bucket }: PortfolioItemProps) {
               <RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
             </Button>
           )}
+          <span className="font-semibold tabular-nums">
+            {formatAmount(item.currentValue, formatCurrency)}
+          </span>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button

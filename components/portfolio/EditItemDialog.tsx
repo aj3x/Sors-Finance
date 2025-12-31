@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useSyncExternalStore } from "react";
-import { Loader2, RefreshCw, Search, AlertTriangle } from "lucide-react";
+import { RefreshCw, AlertTriangle, Info } from "lucide-react";
 import Link from "next/link";
 import {
   Dialog,
@@ -13,14 +13,22 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { updatePortfolioItem, DbPortfolioItem, BucketType, PriceMode } from "@/lib/hooks/useDatabase";
-import { lookupTicker, getExchangeRate } from "@/lib/hooks/useStockPrice";
+import { getExchangeRate } from "@/lib/hooks/useStockPrice";
 import { hasFinnhubApiKey } from "@/lib/settingsStore";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { TickerSearch, SelectedTicker } from "./TickerSearch";
 
 // Hook to check API key status
 function useHasApiKey() {
@@ -50,14 +58,21 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
   // Price mode toggle (ticker = auto-fetch, manual = user-entered)
   const [priceMode, setPriceMode] = useState<PriceMode>(item.priceMode || "ticker");
 
+  // Selected ticker from search
+  const [selectedTicker, setSelectedTicker] = useState<SelectedTicker | null>(
+    item.ticker ? {
+      symbol: item.ticker,
+      name: item.name,
+      price: item.pricePerUnit || 0,
+      currency: item.currency || "USD",
+    } : null
+  );
+
   // Investment-specific fields
-  const [ticker, setTicker] = useState(item.ticker || "");
   const [quantity, setQuantity] = useState(item.quantity?.toString() || "");
-  const [pricePerUnit, setPricePerUnit] = useState(item.pricePerUnit?.toString() || "");
+  const [pricePerUnit, setPricePerUnit] = useState(item.pricePerUnit != null ? item.pricePerUnit.toFixed(2) : "");
   const [currency, setCurrency] = useState(item.currency || "CAD");
   const [exchangeRate, setExchangeRate] = useState(1);
-  const [isLookingUp, setIsLookingUp] = useState(false);
-  const [tickerError, setTickerError] = useState<string | null>(null);
 
   // For non-investment items
   const [value, setValue] = useState(item.currentValue.toString());
@@ -67,12 +82,18 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
     setName(item.name);
     setNotes(item.notes || "");
     setPriceMode(item.priceMode || "ticker");
-    setTicker(item.ticker || "");
+    setSelectedTicker(
+      item.ticker ? {
+        symbol: item.ticker,
+        name: item.name,
+        price: item.pricePerUnit || 0,
+        currency: item.currency || "USD",
+      } : null
+    );
     setQuantity(item.quantity?.toString() || "");
-    setPricePerUnit(item.pricePerUnit?.toString() || "");
+    setPricePerUnit(item.pricePerUnit != null ? item.pricePerUnit.toFixed(2) : "");
     setCurrency(item.currency || "CAD");
     setValue(item.currentValue.toString());
-    setTickerError(null);
 
     // Fetch exchange rate if currency is not CAD
     if (item.currency && item.currency !== "CAD") {
@@ -82,65 +103,43 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
     }
   }, [item]);
 
+  // When ticker is selected, populate fields
+  useEffect(() => {
+    if (selectedTicker) {
+      setName(selectedTicker.name);
+      setPricePerUnit(selectedTicker.price.toFixed(2));
+      setCurrency(selectedTicker.currency);
+
+      // Fetch exchange rate if not CAD
+      if (selectedTicker.currency !== "CAD") {
+        getExchangeRate(selectedTicker.currency, "CAD").then(setExchangeRate);
+      } else {
+        setExchangeRate(1);
+      }
+    }
+  }, [selectedTicker]);
+
   // Calculate total value in CAD
   const calculateTotalCAD = useCallback(() => {
-    if (isInvestment && ticker) {
+    if (isInvestment) {
       const qty = parseFloat(quantity) || 0;
       const price = parseFloat(pricePerUnit) || 0;
       return qty * price * exchangeRate;
     }
     return parseFloat(value) || 0;
-  }, [isInvestment, ticker, quantity, pricePerUnit, exchangeRate, value]);
+  }, [isInvestment, quantity, pricePerUnit, exchangeRate, value]);
 
   const totalCAD = calculateTotalCAD();
 
-  // Lookup ticker
-  const handleTickerLookup = async () => {
-    if (!ticker.trim()) {
-      setTickerError(null);
-      return;
-    }
-
-    // Check for API key first
-    if (!hasApiKey) {
-      setTickerError("Finnhub API key not configured. Go to Settings to add your API key, or use Manual mode.");
-      toast.error("API key required for ticker lookup. Configure in Settings or switch to Manual mode.");
-      return;
-    }
-
-    setIsLookingUp(true);
-    setTickerError(null);
-
-    try {
-      const quote = await lookupTicker(ticker.trim());
-
-      if (quote) {
-        setName(quote.name);
-        setPricePerUnit(quote.price.toString());
-        setCurrency(quote.currency);
-
-        if (quote.currency !== "CAD") {
-          const rate = await getExchangeRate(quote.currency, "CAD");
-          setExchangeRate(rate);
-        } else {
-          setExchangeRate(1);
-        }
-
-        setTicker(quote.ticker);
-      } else {
-        setTickerError("Ticker not found. Check the symbol or try Manual mode.");
-      }
-    } catch {
-      setTickerError("Failed to lookup ticker. Check your API key in Settings.");
-    } finally {
-      setIsLookingUp(false);
-    }
-  };
-
-  const handleTickerKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleTickerLookup();
+  // Handle ticker selection from search
+  const handleTickerSelect = (ticker: SelectedTicker | null) => {
+    setSelectedTicker(ticker);
+    if (!ticker) {
+      // Clear fields when ticker is deselected
+      setName("");
+      setPricePerUnit("");
+      setCurrency("CAD");
+      setExchangeRate(1);
     }
   };
 
@@ -156,11 +155,11 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
           name: name.trim(),
           currentValue: totalCAD,
           notes: notes.trim() || undefined,
-          ticker: priceMode === "ticker" ? ticker.toUpperCase() : undefined,
+          ticker: priceMode === "ticker" && selectedTicker ? selectedTicker.symbol : undefined,
           quantity: parseFloat(quantity) || 0,
           pricePerUnit: parseFloat(pricePerUnit) || 0,
           currency,
-          lastPriceUpdate: priceMode === "ticker" ? new Date() : undefined,
+          lastPriceUpdate: priceMode === "ticker" && selectedTicker ? new Date() : undefined,
           priceMode,
         });
       } else {
@@ -198,7 +197,7 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>
             {isInvestment ? "Edit Investment" : "Edit Item"}
@@ -259,42 +258,15 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
               </div>
             )}
 
-            {/* Ticker field for investments in ticker mode */}
+            {/* Ticker search for investments in ticker mode */}
             {isInvestment && priceMode === "ticker" && (
               <div className="grid gap-2">
-                <Label htmlFor="ticker">Ticker (optional)</Label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      id="ticker"
-                      value={ticker}
-                      onChange={(e) => setTicker(e.target.value.toUpperCase())}
-                      onBlur={handleTickerLookup}
-                      onKeyDown={handleTickerKeyDown}
-                      placeholder="e.g., AAPL, MSFT"
-                      className={tickerError ? "border-destructive" : ""}
-                    />
-                    {isLookingUp && (
-                      <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
-                    )}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    onClick={handleTickerLookup}
-                    disabled={isLookingUp || !ticker.trim() || !hasApiKey}
-                    title={!hasApiKey ? "API key required - Go to Settings" : "Search ticker"}
-                  >
-                    <Search className="h-4 w-4" />
-                  </Button>
-                </div>
-                {tickerError && (
-                  <p className="text-xs text-destructive">{tickerError}</p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  Uses US stock tickers (e.g., AAPL, GOOGL, MSFT)
-                </p>
+                <Label>Search Ticker</Label>
+                <TickerSearch
+                  value={selectedTicker}
+                  onSelect={handleTickerSelect}
+                  hasApiKey={hasApiKey}
+                />
               </div>
             )}
 
@@ -306,7 +278,8 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Apple Inc., Bitcoin"
-                autoFocus={!isInvestment}
+                autoFocus={!isInvestment || priceMode === "manual"}
+                disabled={isInvestment && priceMode === "ticker" && !!selectedTicker}
               />
             </div>
 
@@ -331,18 +304,30 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="price">Price per Unit</Label>
-                    <Input
+                    <CurrencyInput
                       id="price"
-                      type="number"
-                      step="0.01"
-                      min="0"
                       value={pricePerUnit}
-                      onChange={(e) => setPricePerUnit(e.target.value)}
+                      onChange={setPricePerUnit}
                       placeholder="0.00"
+                      disabled={priceMode === "ticker" && !!selectedTicker}
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="currency">Currency</Label>
+                    <div className="flex items-center gap-1">
+                      <Label htmlFor="currency">Currency</Label>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[220px]">
+                            <p className="text-xs">
+                              This is the stock ticker&apos;s native currency. The total value will be automatically converted to your preferred currency. (can be changed in Settings)
+                            </p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
                     <div className="flex gap-2">
                       <Input
                         id="currency"
@@ -350,6 +335,7 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
                         onChange={(e) => setCurrency(e.target.value.toUpperCase())}
                         placeholder="USD"
                         className="flex-1"
+                        disabled={priceMode === "ticker" && !!selectedTicker}
                       />
                       {currency !== "CAD" && (
                         <Button
@@ -386,31 +372,30 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
               </>
             ) : (
               /* Non-investment: simple value field */
-              <div className="grid gap-2">
-                <Label htmlFor="value">Current Value ($)</Label>
-                <Input
-                  id="value"
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-            )}
+              <>
+                <div className="grid gap-2">
+                  <Label htmlFor="value">Current Value ($)</Label>
+                  <CurrencyInput
+                    id="value"
+                    value={value}
+                    onChange={setValue}
+                    placeholder="0.00"
+                  />
+                </div>
 
-            {/* Notes */}
-            <div className="grid gap-2">
-              <Label htmlFor="notes">Notes (optional)</Label>
-              <Textarea
-                id="notes"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Any additional notes..."
-                rows={2}
-              />
-            </div>
+                {/* Notes - only for non-investments */}
+                <div className="grid gap-2">
+                  <Label htmlFor="notes">Notes (optional)</Label>
+                  <Textarea
+                    id="notes"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Any additional notes..."
+                    rows={2}
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -418,8 +403,7 @@ export function EditItemDialog({ open, onOpenChange, item, bucket }: EditItemDia
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting || !name.trim() || (isInvestment && priceMode === "ticker" && !hasApiKey)}
-              title={isInvestment && priceMode === "ticker" && !hasApiKey ? "API key required for Ticker mode" : undefined}
+              disabled={isSubmitting || !name.trim()}
             >
               {isSubmitting ? "Saving..." : "Save Changes"}
             </Button>
