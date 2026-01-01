@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useRef, useEffect, useLayoutEffect } from "react";
+import { useState, useRef, useLayoutEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -24,28 +25,13 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Plus, Pencil, Trash2, X, Search, GripVertical, Check, Lock } from "lucide-react";
-import { DbCategory, SYSTEM_CATEGORIES } from "@/lib/db";
+import { Plus, Pencil, Trash2, X, Search, GripVertical, Lock } from "lucide-react";
+import { DbCategory } from "@/lib/db";
 import {
   DndContext,
   closestCenter,
@@ -286,21 +272,12 @@ export function CategoryManager({
   getTransactionCount,
 }: CategoryManagerProps) {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [editingCategory, setEditingCategory] = useState<DbCategory | null>(
-    null
-  );
+  const [editingCategory, setEditingCategory] = useState<DbCategory | null>(null);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newKeywordInput, setNewKeywordInput] = useState("");
   const [keywords, setKeywords] = useState<string[]>([]);
-  const [keywordSearch, setKeywordSearch] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [keywordError, setKeywordError] = useState("");
-  const [editingKeyword, setEditingKeyword] = useState<string | null>(null);
-  const [editingKeywordValue, setEditingKeywordValue] = useState("");
-  const [selectedKeywords, setSelectedKeywords] = useState<Set<string>>(new Set());
-  const [bulkAddOpen, setBulkAddOpen] = useState(false);
-  const [bulkAddText, setBulkAddText] = useState("");
   const [categoryToDelete, setCategoryToDelete] = useState<DbCategory | null>(null);
-  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -346,174 +323,44 @@ export function CategoryManager({
     setEditingCategory(null);
   };
 
-  const handleAddKeyword = () => {
-    const input = newKeywordInput.trim();
-    if (!input) return;
+  const handleAddKeyword = (keyword: string) => {
+    const trimmed = keyword.trim();
+    if (!trimmed) return;
 
-    // Split by commas and process each keyword
-    const inputKeywords = input
-      .split(',')
-      .map(k => k.trim())
-      .filter(k => k.length > 0);
-
-    const duplicatesInOtherCategories: string[] = [];
-    const duplicatesInCurrentList: string[] = [];
-    const validKeywords: string[] = [];
-
-    for (const keyword of inputKeywords) {
-      // Check if already in current list
-      if (keywords.some(existing => existing.toLowerCase() === keyword.toLowerCase())) {
-        duplicatesInCurrentList.push(keyword);
-        continue;
-      }
-
-      // Check if exists in other categories
-      const check = checkKeywordExists(keyword);
-      if (check.exists) {
-        duplicatesInOtherCategories.push(`"${keyword}" (already in ${check.categoryName})`);
-      } else {
-        validKeywords.push(keyword);
-      }
-    }
-
-    if (duplicatesInOtherCategories.length > 0) {
-      setKeywordError(`Cannot add duplicate keywords: ${duplicatesInOtherCategories.join(', ')}. Each keyword can only exist in one category to avoid conflicts.`);
+    // Check if already in current list
+    if (keywords.some(existing => existing.toLowerCase() === trimmed.toLowerCase())) {
+      setKeywordError("This keyword already exists");
       return;
     }
 
-    if (validKeywords.length > 0) {
-      setKeywords(prev => [...prev, ...validKeywords]);
-      setKeywordError("");
+    // Check if exists in other categories
+    const check = checkKeywordExists(trimmed);
+    if (check.exists) {
+      setKeywordError(`Already exists in "${check.categoryName}"`);
+      return;
     }
 
-    setNewKeywordInput("");
+    setKeywords(prev => [...prev, trimmed]);
+    setSearchInput("");
+    setKeywordError("");
   };
 
   const handleRemoveKeyword = (keyword: string) => {
     setKeywords(prev => prev.filter((k) => k !== keyword));
   };
 
-  const handleStartEditKeyword = (keyword: string) => {
-    setEditingKeyword(keyword);
-    setEditingKeywordValue(keyword);
-    setKeywordError("");
-  };
-
-  const handleSaveEditKeyword = () => {
-    const trimmedValue = editingKeywordValue.trim();
-
-    if (!trimmedValue) {
-      setKeywordError("Keyword cannot be empty");
-      return;
-    }
-
-    // Check if the new value already exists (and it's not the same keyword)
-    if (trimmedValue.toLowerCase() !== editingKeyword?.toLowerCase()) {
-      if (keywords.some(k => k.toLowerCase() === trimmedValue.toLowerCase())) {
-        setKeywordError("This keyword already exists in the list");
-        return;
-      }
-
-      // Check if exists in other categories
-      const check = checkKeywordExists(trimmedValue);
-      if (check.exists) {
-        setKeywordError(`"${trimmedValue}" already exists in the "${check.categoryName}" category`);
-        return;
-      }
-    }
-
-    // Update the keyword
-    setKeywords(prev => prev.map(k => k === editingKeyword ? trimmedValue : k));
-    setEditingKeyword(null);
-    setEditingKeywordValue("");
-    setKeywordError("");
-  };
-
-  const handleCancelEditKeyword = () => {
-    setEditingKeyword(null);
-    setEditingKeywordValue("");
-    setKeywordError("");
-  };
-
   const resetForm = () => {
     setNewCategoryName("");
-    setNewKeywordInput("");
     setKeywords([]);
-    setKeywordSearch("");
+    setSearchInput("");
     setKeywordError("");
-    setEditingKeyword(null);
-    setEditingKeywordValue("");
-    setSelectedKeywords(new Set());
-    setBulkAddOpen(false);
-    setBulkAddText("");
-  };
-
-  const handleBulkAdd = () => {
-    const lines = bulkAddText
-      .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0);
-
-    const duplicatesInOtherCategories: string[] = [];
-    const duplicatesInCurrentList: string[] = [];
-    const validKeywords: string[] = [];
-
-    for (const keyword of lines) {
-      if (keywords.some(existing => existing.toLowerCase() === keyword.toLowerCase())) {
-        duplicatesInCurrentList.push(keyword);
-        continue;
-      }
-
-      const check = checkKeywordExists(keyword);
-      if (check.exists) {
-        duplicatesInOtherCategories.push(`"${keyword}" (already in ${check.categoryName})`);
-      } else {
-        validKeywords.push(keyword);
-      }
-    }
-
-    if (duplicatesInOtherCategories.length > 0) {
-      setKeywordError(`Cannot add duplicate keywords: ${duplicatesInOtherCategories.join(', ')}`);
-      return;
-    }
-
-    if (validKeywords.length > 0) {
-      setKeywords(prev => [...prev, ...validKeywords]);
-      setBulkAddText("");
-      setBulkAddOpen(false);
-      setKeywordError("");
-    }
-  };
-
-  const handleToggleKeyword = (keyword: string) => {
-    const newSelected = new Set(selectedKeywords);
-    if (newSelected.has(keyword)) {
-      newSelected.delete(keyword);
-    } else {
-      newSelected.add(keyword);
-    }
-    setSelectedKeywords(newSelected);
-  };
-
-  const handleToggleAll = (checked: boolean) => {
-    if (checked) {
-      setSelectedKeywords(new Set(filteredKeywords));
-    } else {
-      setSelectedKeywords(new Set());
-    }
-  };
-
-  const handleBulkDelete = () => {
-    setKeywords(prev => prev.filter(k => !selectedKeywords.has(k)));
-    setSelectedKeywords(new Set());
-    setShowBulkDeleteConfirm(false);
   };
 
   const openEditDialog = (category: DbCategory) => {
     setEditingCategory(category);
     setNewCategoryName(category.name);
     setKeywords([...category.keywords]);
-    setKeywordSearch("");
+    setSearchInput("");
     setKeywordError("");
   };
 
@@ -522,234 +369,120 @@ export function CategoryManager({
     resetForm();
   };
 
-  const handleKeywordInputChange = (value: string) => {
-    setNewKeywordInput(value);
-    setKeywordError("");
-  };
-
-  // Filter keywords based on search and reverse to show newest first
+  // Filter keywords based on search, newest first
   const filteredKeywords = keywords
     .filter((keyword) =>
-      keyword.toLowerCase().includes(keywordSearch.toLowerCase())
+      keyword.toLowerCase().includes(searchInput.toLowerCase())
     )
     .reverse();
+
+  // Check if search input can be added as new keyword
+  const canAddSearchAsKeyword = searchInput.trim() &&
+    !keywords.some(k => k.toLowerCase() === searchInput.trim().toLowerCase()) &&
+    !checkKeywordExists(searchInput.trim()).exists;
 
   return (
     <Card className="flex flex-col min-h-0">
       <CardHeader className="flex-shrink-0">
         <div className="flex items-center justify-between">
           <CardTitle>Category Manager</CardTitle>
-          <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+          <Dialog open={isAddDialogOpen} onOpenChange={(open) => { if (!open) resetForm(); setIsAddDialogOpen(open); }}>
             <DialogTrigger asChild>
               <Button size="sm">
                 <Plus className="h-4 w-4 mr-2" />
                 Add Category
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-              <DialogHeader className="flex-shrink-0">
+            <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+              <DialogHeader className="flex-shrink-0 pb-4">
                 <DialogTitle>Add New Category</DialogTitle>
               </DialogHeader>
-              <div className="flex flex-col gap-3 overflow-hidden flex-1">
-                <div className="flex-shrink-0">
+              <div className="flex flex-col gap-5 overflow-hidden flex-1">
+                {/* Category Name */}
+                <div className="flex-shrink-0 space-y-2">
+                  <Label htmlFor="category-name" className="text-sm text-muted-foreground">Category Name</Label>
                   <Input
+                    id="category-name"
                     value={newCategoryName}
                     onChange={(e) => setNewCategoryName(e.target.value)}
-                    placeholder="Category Name (e.g., Groceries)"
-                    className="h-9"
+                    placeholder="e.g., Groceries"
+                    className="h-10"
                   />
                 </div>
 
-                <div className="flex-shrink-0">
-                  <div className="flex items-center gap-2">
+                {/* Search/Add Input */}
+                <div className="flex-shrink-0 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm text-muted-foreground">Keywords</Label>
+                    <Badge variant="secondary" className="text-xs">
+                      {keywords.length} keyword{keywords.length !== 1 ? 's' : ''}
+                    </Badge>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
-                      value={newKeywordInput}
-                      onChange={(e) => handleKeywordInputChange(e.target.value)}
+                      value={searchInput}
+                      onChange={(e) => { setSearchInput(e.target.value); setKeywordError(""); }}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") {
+                        if (e.key === "Enter" && canAddSearchAsKeyword) {
                           e.preventDefault();
-                          handleAddKeyword();
+                          handleAddKeyword(searchInput);
                         }
                       }}
-                      placeholder="Add keyword (comma-separated for multiple)"
-                      className="h-9 flex-1"
+                      placeholder="Search or add keyword..."
+                      className="pl-9 h-10"
                     />
-                    <Button size="sm" onClick={handleAddKeyword} disabled={!newKeywordInput.trim()}>
-                      <Plus className="h-4 w-4" />
-                    </Button>
                   </div>
-                  {keywordError && (
-                    <p className="text-xs text-destructive mt-1">{keywordError}</p>
-                  )}
+                  {keywordError && <p className="text-xs text-destructive">{keywordError}</p>}
                 </div>
 
-                <div className="flex-shrink-0">
-                  <div className="flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        value={keywordSearch}
-                        onChange={(e) => setKeywordSearch(e.target.value)}
-                        placeholder="Search keywords..."
-                        className="pl-9 h-9"
-                      />
-                    </div>
-                    <Badge variant="secondary" className="px-2 py-1">
-                      {filteredKeywords.length !== keywords.length
-                        ? `${filteredKeywords.length}/${keywords.length}`
-                        : keywords.length}
-                    </Badge>
-                    <Popover open={bulkAddOpen} onOpenChange={setBulkAddOpen}>
-                      <PopoverTrigger asChild>
-                        <Button size="sm" variant="outline">
-                          <Plus className="h-4 w-4 mr-1" />
-                          Bulk Add
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-80">
-                        <div className="space-y-2">
-                          <h4 className="font-medium text-sm">Add Multiple Keywords</h4>
-                          <p className="text-xs text-muted-foreground">
-                            Enter one keyword per line
-                          </p>
-                          <Textarea
-                            value={bulkAddText}
-                            onChange={(e) => setBulkAddText(e.target.value)}
-                            placeholder="LOBLAWS&#10;METRO&#10;SOBEYS"
-                            rows={6}
-                            className="font-mono text-sm"
-                          />
-                          <div className="flex justify-end gap-2">
-                            <Button size="sm" variant="outline" onClick={() => setBulkAddOpen(false)}>
-                              Cancel
-                            </Button>
-                            <Button size="sm" onClick={handleBulkAdd}>
-                              Add All
+                {/* Keyword List */}
+                <div className="flex-1 min-h-0 border rounded-lg overflow-hidden flex flex-col">
+                  <div className="overflow-y-auto flex-1 p-1">
+                    {/* Add option if search doesn't match */}
+                    {canAddSearchAsKeyword && (
+                      <button
+                        onClick={() => handleAddKeyword(searchInput)}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md hover:bg-accent transition-colors mb-1"
+                      >
+                        <Plus className="h-4 w-4 text-primary" />
+                        <span className="text-sm">Add &quot;{searchInput.trim()}&quot;</span>
+                      </button>
+                    )}
+                    {filteredKeywords.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {filteredKeywords.map((keyword) => (
+                          <div
+                            key={keyword}
+                            className="group flex items-start justify-between gap-2 px-3 py-2 rounded-md hover:bg-accent/50 transition-colors"
+                          >
+                            <span className="font-mono text-sm break-all leading-relaxed">{keyword}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveKeyword(keyword)}
+                              className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                            >
+                              <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
                             </Button>
                           </div>
-                        </div>
-                      </PopoverContent>
-                    </Popover>
-                    {selectedKeywords.size > 0 && (
-                      <Button size="sm" variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)}>
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        Delete ({selectedKeywords.size})
-                      </Button>
+                        ))}
+                      </div>
+                    ) : keywords.length === 0 ? (
+                      <div className="flex items-center justify-center h-full text-sm text-muted-foreground py-8">
+                        No keywords yet. Type above to add.
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-sm text-muted-foreground py-8">
+                        No matches for &quot;{searchInput}&quot;
+                      </div>
                     )}
                   </div>
                 </div>
-
-                {keywords.length > 0 && (
-                  <div className="flex-1 min-h-0 border rounded-md overflow-hidden flex flex-col">
-                    <div className="bg-muted border-b flex-shrink-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[40px] py-2 pl-4">
-                              <Checkbox
-                                checked={selectedKeywords.size === filteredKeywords.length && filteredKeywords.length > 0}
-                                onCheckedChange={handleToggleAll}
-                              />
-                            </TableHead>
-                            <TableHead className="py-2">Keyword</TableHead>
-                            <TableHead className="w-[100px] py-2 text-center">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                      </Table>
-                    </div>
-                    <div className="overflow-auto flex-1">
-                      <Table>
-                          <TableBody>
-                            {filteredKeywords.length > 0 ? (
-                              filteredKeywords.map((keyword) => (
-                                <TableRow key={keyword} className="group">
-                                  <TableCell className="py-2 pl-4">
-                                    <Checkbox
-                                      checked={selectedKeywords.has(keyword)}
-                                      onCheckedChange={() => handleToggleKeyword(keyword)}
-                                    />
-                                  </TableCell>
-                                  <TableCell className="font-mono py-2">
-                                    {editingKeyword === keyword ? (
-                                      <Input
-                                        value={editingKeywordValue}
-                                        onChange={(e) => setEditingKeywordValue(e.target.value)}
-                                        onKeyPress={(e) => {
-                                          if (e.key === "Enter") {
-                                            e.preventDefault();
-                                            handleSaveEditKeyword();
-                                          } else if (e.key === "Escape") {
-                                            handleCancelEditKeyword();
-                                          }
-                                        }}
-                                        className="h-7"
-                                        autoFocus
-                                      />
-                                    ) : (
-                                      keyword
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-center py-2">
-                                    {editingKeyword === keyword ? (
-                                      <div className="flex justify-center space-x-1">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={handleSaveEditKeyword}
-                                          className="h-7 w-7 p-0"
-                                        >
-                                          <Check className="h-4 w-4 text-green-600" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={handleCancelEditKeyword}
-                                          className="h-7 w-7 p-0"
-                                        >
-                                          <X className="h-4 w-4" />
-                                        </Button>
-                                      </div>
-                                    ) : (
-                                      <div className="flex justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleStartEditKeyword(keyword)}
-                                          className="h-7 w-7 p-0"
-                                        >
-                                          <Pencil className="h-3 w-3" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => handleRemoveKeyword(keyword)}
-                                          className="h-7 w-7 p-0"
-                                        >
-                                          <Trash2 className="h-3 w-3 text-destructive" />
-                                        </Button>
-                                      </div>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))
-                            ) : (
-                              <TableRow>
-                                <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
-                                  No keywords found matching &quot;{keywordSearch}&quot;
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                )}
               </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleAddCategory}>Create Category</Button>
+              <DialogFooter className="pt-4">
+                <Button variant="outline" onClick={() => setIsAddDialogOpen(false)}>Cancel</Button>
+                <Button onClick={handleAddCategory} disabled={!newCategoryName.trim()}>Create Category</Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
@@ -789,29 +522,21 @@ export function CategoryManager({
         )}
 
         {/* Edit Dialog */}
-        <Dialog
-          open={editingCategory !== null}
-          onOpenChange={(open) => !open && closeEditDialog()}
-        >
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
-            <DialogHeader className="flex-shrink-0">
+        <Dialog open={editingCategory !== null} onOpenChange={(open) => !open && closeEditDialog()}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+            <DialogHeader className="flex-shrink-0 pb-4">
               <DialogTitle>Edit Category</DialogTitle>
             </DialogHeader>
-            <div className="flex flex-col gap-3 overflow-hidden flex-1">
-              <div className="flex-shrink-0">
+            <div className="flex flex-col gap-5 overflow-hidden flex-1">
+              {/* Category Name */}
+              <div className="flex-shrink-0 space-y-2">
                 <div className="flex items-center gap-2">
-                  <Input
-                    value={newCategoryName}
-                    onChange={(e) => setNewCategoryName(e.target.value)}
-                    placeholder="Category Name"
-                    className="h-9 flex-1"
-                    disabled={editingCategory?.isSystem}
-                  />
+                  <Label htmlFor="edit-category-name" className="text-sm text-muted-foreground">Category Name</Label>
                   {editingCategory?.isSystem && (
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <Badge variant="outline" className="text-xs gap-1 px-1.5 shrink-0">
+                          <Badge variant="outline" className="text-xs gap-1 px-1.5">
                             <Lock className="h-3 w-3" />
                             System
                           </Badge>
@@ -823,167 +548,89 @@ export function CategoryManager({
                     </TooltipProvider>
                   )}
                 </div>
+                <Input
+                  id="edit-category-name"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="Category Name"
+                  className="h-10"
+                  disabled={editingCategory?.isSystem}
+                />
               </div>
 
-              <div className="flex-shrink-0">
-                <div className="flex items-center gap-2">
+              {/* Search/Add Input */}
+              <div className="flex-shrink-0 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm text-muted-foreground">Keywords</Label>
+                  <Badge variant="secondary" className="text-xs">
+                    {keywords.length} keyword{keywords.length !== 1 ? 's' : ''}
+                  </Badge>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    value={newKeywordInput}
-                    onChange={(e) => handleKeywordInputChange(e.target.value)}
+                    value={searchInput}
+                    onChange={(e) => { setSearchInput(e.target.value); setKeywordError(""); }}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") {
+                      if (e.key === "Enter" && canAddSearchAsKeyword) {
                         e.preventDefault();
-                        handleAddKeyword();
+                        handleAddKeyword(searchInput);
                       }
                     }}
-                    placeholder="Add keyword (comma-separated for multiple)"
-                    className="h-9 flex-1"
+                    placeholder="Search or add keyword..."
+                    className="pl-9 h-10"
                   />
-                  <Button size="sm" onClick={handleAddKeyword} disabled={!newKeywordInput.trim()}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
                 </div>
-                {keywordError && (
-                  <p className="text-xs text-destructive mt-1">{keywordError}</p>
-                )}
+                {keywordError && <p className="text-xs text-destructive">{keywordError}</p>}
               </div>
 
-              <div className="flex-shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={keywordSearch}
-                      onChange={(e) => setKeywordSearch(e.target.value)}
-                      placeholder="Search keywords..."
-                      className="pl-9 h-9"
-                    />
-                  </div>
-                  <Badge variant="secondary" className="px-2 py-1">
-                    {filteredKeywords.length !== keywords.length
-                      ? `${filteredKeywords.length}/${keywords.length}`
-                      : keywords.length}
-                  </Badge>
-                  {selectedKeywords.size > 0 && (
-                    <Button size="sm" variant="destructive" onClick={() => setShowBulkDeleteConfirm(true)}>
-                      <Trash2 className="h-4 w-4 mr-1" />
-                      Delete ({selectedKeywords.size})
-                    </Button>
+              {/* Keyword List */}
+              <div className="flex-1 min-h-0 border rounded-lg overflow-hidden flex flex-col">
+                <div className="overflow-y-auto flex-1 p-1">
+                  {/* Add option if search doesn't match */}
+                  {canAddSearchAsKeyword && (
+                    <button
+                      onClick={() => handleAddKeyword(searchInput)}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left rounded-md hover:bg-accent transition-colors mb-1"
+                    >
+                      <Plus className="h-4 w-4 text-primary" />
+                      <span className="text-sm">Add &quot;{searchInput.trim()}&quot;</span>
+                    </button>
+                  )}
+                  {filteredKeywords.length > 0 ? (
+                    <div className="space-y-0.5">
+                      {filteredKeywords.map((keyword) => (
+                        <div
+                          key={keyword}
+                          className="group flex items-start justify-between gap-2 px-3 py-2 rounded-md hover:bg-accent/50 transition-colors"
+                        >
+                          <span className="font-mono text-sm break-all leading-relaxed">{keyword}</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRemoveKeyword(keyword)}
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                          >
+                            <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : keywords.length === 0 ? (
+                    <div className="flex items-center justify-center h-full text-sm text-muted-foreground py-8">
+                      No keywords yet. Type above to add.
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-sm text-muted-foreground py-8">
+                      No matches for &quot;{searchInput}&quot;
+                    </div>
                   )}
                 </div>
               </div>
-
-              {keywords.length > 0 && (
-                <div className="flex-1 min-h-0 border rounded-md overflow-hidden flex flex-col">
-                  <div className="bg-muted border-b flex-shrink-0">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[40px] py-2 pl-4">
-                            <Checkbox
-                              checked={selectedKeywords.size === filteredKeywords.length && filteredKeywords.length > 0}
-                              onCheckedChange={handleToggleAll}
-                            />
-                          </TableHead>
-                          <TableHead className="py-2">Keyword</TableHead>
-                          <TableHead className="w-[100px] py-2 text-center">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                    </Table>
-                  </div>
-                  <div className="overflow-auto flex-1">
-                    <Table>
-                        <TableBody>
-                          {filteredKeywords.length > 0 ? (
-                            filteredKeywords.map((keyword) => (
-                              <TableRow key={keyword} className="group">
-                                <TableCell className="py-2 pl-4">
-                                  <Checkbox
-                                    checked={selectedKeywords.has(keyword)}
-                                    onCheckedChange={() => handleToggleKeyword(keyword)}
-                                  />
-                                </TableCell>
-                                <TableCell className="font-mono py-2">
-                                  {editingKeyword === keyword ? (
-                                    <Input
-                                      value={editingKeywordValue}
-                                      onChange={(e) => setEditingKeywordValue(e.target.value)}
-                                      onKeyPress={(e) => {
-                                        if (e.key === "Enter") {
-                                          e.preventDefault();
-                                          handleSaveEditKeyword();
-                                        } else if (e.key === "Escape") {
-                                          handleCancelEditKeyword();
-                                        }
-                                      }}
-                                      className="h-7"
-                                      autoFocus
-                                    />
-                                  ) : (
-                                    keyword
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-center py-2">
-                                  {editingKeyword === keyword ? (
-                                    <div className="flex justify-center space-x-1">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={handleSaveEditKeyword}
-                                        className="h-7 w-7 p-0"
-                                      >
-                                        <Check className="h-4 w-4 text-green-600" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={handleCancelEditKeyword}
-                                        className="h-7 w-7 p-0"
-                                      >
-                                        <X className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <div className="flex justify-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleStartEditKeyword(keyword)}
-                                        className="h-7 w-7 p-0"
-                                      >
-                                        <Pencil className="h-3 w-3" />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => handleRemoveKeyword(keyword)}
-                                        className="h-7 w-7 p-0"
-                                      >
-                                        <Trash2 className="h-3 w-3 text-destructive" />
-                                      </Button>
-                                    </div>
-                                  )}
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          ) : (
-                            <TableRow>
-                              <TableCell colSpan={3} className="text-center text-sm text-muted-foreground py-8">
-                                No keywords found matching &quot;{keywordSearch}&quot;
-                              </TableCell>
-                            </TableRow>
-                          )}
-                        </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
             </div>
-            <DialogFooter className="flex-shrink-0">
-              <Button variant="outline" onClick={closeEditDialog}>
-                Cancel
-              </Button>
-              <Button onClick={handleUpdateCategory}>Save Changes</Button>
+            <DialogFooter className="pt-4">
+              <Button variant="outline" onClick={closeEditDialog}>Cancel</Button>
+              <Button onClick={handleUpdateCategory} disabled={!newCategoryName.trim()}>Save Changes</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -1019,26 +666,6 @@ export function CategoryManager({
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Bulk Delete Keywords Confirmation Dialog */}
-        <AlertDialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete Keywords</AlertDialogTitle>
-              <AlertDialogDescription>
-                Are you sure you want to delete {selectedKeywords.size} keyword{selectedKeywords.size !== 1 ? 's' : ''}? This action cannot be undone.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                variant="destructive"
-                onClick={handleBulkDelete}
-              >
-                Delete
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </CardContent>
     </Card>
   );
