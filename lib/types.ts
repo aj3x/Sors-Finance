@@ -9,7 +9,7 @@ export interface Transaction {
   amountOut: number; // Money leaving account (positive)
   amountIn: number; // Money entering account (positive)
   netAmount: number; // amountIn - amountOut
-  source: "CIBC" | "AMEX";
+  source: string; // Bank ID (e.g., "CIBC", "AMEX") - extensible for new banks
   categoryId: string | null; // null if uncategorized
   isConflict: boolean; // true if matched multiple categories
   conflictingCategories?: string[]; // Category IDs if conflict
@@ -47,7 +47,7 @@ export interface ParseResult {
  */
 export interface UploadedFile {
   file: File;
-  bankType: "CIBC" | "AMEX" | "UNKNOWN";
+  bankId: string | null; // Bank ID or null if unknown
   detectionConfidence?: "high" | "medium" | "low" | "none";
   detectionReason?: string;
   isManuallySet?: boolean;

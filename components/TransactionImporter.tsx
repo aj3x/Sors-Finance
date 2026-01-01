@@ -16,8 +16,7 @@ import { UncategorizedList, UncategorizedBulkActions } from "@/components/Uncate
 import { ResultsView } from "@/components/ResultsView";
 import { ResolveSection } from "@/components/resolve-step";
 import { Transaction, UploadedFile, WizardStep } from "@/lib/types";
-import { parseCIBC } from "@/lib/parsers/cibc";
-import { parseAMEX } from "@/lib/parsers/amex";
+import { parseFile } from "@/lib/parsers";
 import {
   categorizeTransactions,
   getCategorizationSummary,
@@ -115,20 +114,26 @@ export function TransactionImporter({ onComplete, onCancel }: TransactionImporte
       const allErrors: string[] = [];
 
       for (const uploadedFile of uploadedFiles) {
-        let result;
-
-        if (uploadedFile.bankType === "CIBC") {
-          result = await parseCIBC(uploadedFile.file);
-        } else if (uploadedFile.bankType === "AMEX") {
-          result = await parseAMEX(uploadedFile.file);
-        } else {
+        if (!uploadedFile.bankId) {
           allErrors.push(
             `Unknown bank type for file: ${uploadedFile.file.name}`
           );
           continue;
         }
 
-        allTransactions.push(...result.transactions);
+        const result = await parseFile(uploadedFile.file, uploadedFile.bankId);
+
+        // Convert parsed transactions to full Transaction objects
+        for (const parsed of result.transactions) {
+          allTransactions.push({
+            id: crypto.randomUUID(),
+            ...parsed,
+            source: result.bankId,
+            categoryId: null,
+            isConflict: false,
+          });
+        }
+
         allErrors.push(...result.errors);
       }
 
@@ -472,7 +477,7 @@ export function TransactionImporter({ onComplete, onCancel }: TransactionImporte
             )}
             <Button
               onClick={handleProcessFiles}
-              disabled={uploadedFiles.length === 0 || isProcessing || uploadedFiles.some(f => f.bankType === "UNKNOWN" || (f.validationErrors && f.validationErrors.length > 0))}
+              disabled={uploadedFiles.length === 0 || isProcessing || uploadedFiles.some(f => f.bankId === null || (f.validationErrors && f.validationErrors.length > 0))}
             >
               {isProcessing ? "Processing..." : "Process Files"}
             </Button>

@@ -212,8 +212,9 @@ export function TransactionDataTable({
           const categoryName = getCategoryName(categoryId);
           return (
             <Badge
-              variant={categoryId === null ? "default" : "secondary"}
-              className={categoryId === null ? "text-black" : ""}
+              variant="secondary"
+              className={categoryId === null ? "text-amber-900 dark:text-amber-200" : ""}
+              style={categoryId === null ? { backgroundColor: "oklch(0.77 0.16 70 / 0.4)" } : undefined}
             >
               {categoryName}
             </Badge>
@@ -387,7 +388,7 @@ export function TransactionDataTable({
 
   // Get the Ignore category ID
   const ignoreCategoryId = useMemo(() => {
-    const ignoreCategory = categories.find(c => c.name === SYSTEM_CATEGORIES.IGNORE);
+    const ignoreCategory = categories.find(c => c.name === SYSTEM_CATEGORIES.EXCLUDED);
     return ignoreCategory?.id;
   }, [categories]);
 

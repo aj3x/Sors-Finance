@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,12 +19,13 @@ import {
 } from "@/components/ui/tooltip";
 import { Upload, FileSpreadsheet, X, Loader2, CheckCircle2, AlertTriangle, HelpCircle, Info } from "lucide-react";
 import { UploadedFile } from "@/lib/types";
-import { detectBankFromContents, detectBankFromFilename, validateFileForBank, BankType } from "@/lib/bankDetection";
+import { detectBank, validateFile, getAllBankMeta } from "@/lib/parsers";
 
-const BANK_OPTIONS = [
-  { value: "CIBC", label: "CIBC", logo: "/logos/cibc.png" },
-  { value: "AMEX", label: "AMEX", logo: "/logos/amex.png" },
-] as const;
+// Bank logos mapping (add new banks here as they are added)
+const BANK_LOGOS: Record<string, string> = {
+  CIBC: "/logos/cibc.png",
+  AMEX: "/logos/amex.png",
+};
 
 interface FileUploadProps {
   onFilesSelected: (files: UploadedFile[]) => void;
@@ -38,6 +39,15 @@ export function FileUpload({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Get all available bank options from the registry
+  const bankOptions = useMemo(() => {
+    return getAllBankMeta().map(meta => ({
+      id: meta.id,
+      name: meta.name,
+      logo: BANK_LOGOS[meta.id] || null,
+    }));
+  }, []);
+
   const handleFiles = async (fileList: FileList | null) => {
     if (!fileList) return;
 
@@ -46,40 +56,16 @@ export function FileUpload({
     const newFiles: UploadedFile[] = [];
 
     for (const file of Array.from(fileList)) {
-      // Try content-based detection first
-      const contentResult = await detectBankFromContents(file);
+      // Detect bank using the registry
+      const detection = await detectBank(file);
 
-      // If content detection is confident, use it
-      if (contentResult.confidence === "high" || contentResult.confidence === "medium") {
-        newFiles.push({
-          file,
-          bankType: contentResult.bankType,
-          detectionConfidence: contentResult.confidence,
-          detectionReason: contentResult.reason,
-          isManuallySet: false,
-        });
-      } else {
-        // Fall back to filename detection
-        const filenameType = detectBankFromFilename(file.name);
-        if (filenameType !== "UNKNOWN") {
-          newFiles.push({
-            file,
-            bankType: filenameType,
-            detectionConfidence: "low",
-            detectionReason: "Detected from filename pattern",
-            isManuallySet: false,
-          });
-        } else {
-          // Could not detect - require manual selection
-          newFiles.push({
-            file,
-            bankType: "UNKNOWN",
-            detectionConfidence: "none",
-            detectionReason: contentResult.reason || "Could not determine bank type",
-            isManuallySet: false,
-          });
-        }
-      }
+      newFiles.push({
+        file,
+        bankId: detection.bankId,
+        detectionConfidence: detection.confidence,
+        detectionReason: detection.reason,
+        isManuallySet: false,
+      });
     }
 
     setIsAnalyzing(false);
@@ -89,17 +75,17 @@ export function FileUpload({
     onFilesSelected(updated);
   };
 
-  const updateFileBankType = async (index: number, bankType: BankType) => {
+  const updateFileBankType = async (index: number, bankId: string) => {
     const file = files[index];
 
     // Validate the file for the selected bank type
-    const validation = await validateFileForBank(file.file, bankType);
+    const validation = await validateFile(file.file, bankId);
 
     const updated = files.map((f, i) =>
       i === index
         ? {
             ...f,
-            bankType,
+            bankId,
             isManuallySet: true,
             detectionConfidence: validation.isValid ? "high" as const : "none" as const,
             detectionReason: validation.isValid ? "Manually selected" : "Validation failed",
@@ -134,7 +120,7 @@ export function FileUpload({
     setIsDragging(false);
   };
 
-  const hasUnknownFiles = files.some((f) => f.bankType === "UNKNOWN");
+  const hasUnknownFiles = files.some((f) => f.bankId === null);
   const hasValidationErrors = files.some((f) => f.validationErrors && f.validationErrors.length > 0);
 
   const getConfidenceIcon = (file: UploadedFile) => {
@@ -142,7 +128,7 @@ export function FileUpload({
     if (file.validationErrors && file.validationErrors.length > 0) {
       return <AlertTriangle className="h-4 w-4 text-destructive" />;
     }
-    if (file.isManuallySet && file.bankType !== "UNKNOWN") {
+    if (file.isManuallySet && file.bankId !== null) {
       return <CheckCircle2 className="h-4 w-4 text-green-500" />;
     }
     switch (file.detectionConfidence) {
@@ -155,6 +141,11 @@ export function FileUpload({
       default:
         return <HelpCircle className="h-4 w-4 text-destructive" />;
     }
+  };
+
+  const getBankOption = (bankId: string | null) => {
+    if (!bankId) return null;
+    return bankOptions.find(b => b.id === bankId);
   };
 
   return (
@@ -246,39 +237,43 @@ export function FileUpload({
                       </TooltipProvider>
 
                       <Select
-                        value={uploadedFile.bankType}
-                        onValueChange={(value) => updateFileBankType(index, value as BankType)}
+                        value={uploadedFile.bankId || ""}
+                        onValueChange={(value) => updateFileBankType(index, value)}
                       >
-                        <SelectTrigger className={`w-[130px] h-8 ${uploadedFile.bankType === "UNKNOWN" || hasErrors ? "border-destructive" : ""}`}>
+                        <SelectTrigger className={`w-[130px] h-8 ${uploadedFile.bankId === null || hasErrors ? "border-destructive" : ""}`}>
                           <SelectValue>
-                            {uploadedFile.bankType === "UNKNOWN" ? (
+                            {uploadedFile.bankId === null ? (
                               <span className="text-muted-foreground">Unknown</span>
                             ) : (
                               <div className="flex items-center gap-2">
-                                <Image
-                                  src={BANK_OPTIONS.find(b => b.value === uploadedFile.bankType)?.logo || ""}
-                                  alt={uploadedFile.bankType}
-                                  width={16}
-                                  height={16}
-                                  className="h-4 w-auto"
-                                />
-                                <span>{uploadedFile.bankType}</span>
+                                {getBankOption(uploadedFile.bankId)?.logo && (
+                                  <Image
+                                    src={getBankOption(uploadedFile.bankId)!.logo!}
+                                    alt={uploadedFile.bankId}
+                                    width={16}
+                                    height={16}
+                                    className="h-4 w-auto"
+                                  />
+                                )}
+                                <span>{getBankOption(uploadedFile.bankId)?.name || uploadedFile.bankId}</span>
                               </div>
                             )}
                           </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
-                          {BANK_OPTIONS.map((bank) => (
-                            <SelectItem key={bank.value} value={bank.value}>
+                          {bankOptions.map((bank) => (
+                            <SelectItem key={bank.id} value={bank.id}>
                               <div className="flex items-center gap-2">
-                                <Image
-                                  src={bank.logo}
-                                  alt={bank.label}
-                                  width={16}
-                                  height={16}
-                                  className="h-4 w-auto"
-                                />
-                                <span>{bank.label}</span>
+                                {bank.logo && (
+                                  <Image
+                                    src={bank.logo}
+                                    alt={bank.name}
+                                    width={16}
+                                    height={16}
+                                    className="h-4 w-auto"
+                                  />
+                                )}
+                                <span>{bank.name}</span>
                               </div>
                             </SelectItem>
                           ))}
@@ -298,7 +293,7 @@ export function FileUpload({
                   {/* Validation Errors */}
                   {hasErrors && (
                     <div className="ml-8 p-2 bg-destructive/10 border border-destructive/20 rounded text-sm">
-                      <p className="font-medium text-destructive mb-1">File doesn&apos;t match {uploadedFile.bankType} format:</p>
+                      <p className="font-medium text-destructive mb-1">File doesn&apos;t match {getBankOption(uploadedFile.bankId)?.name || uploadedFile.bankId} format:</p>
                       <ul className="list-disc list-inside text-destructive text-xs space-y-0.5">
                         {uploadedFile.validationErrors!.map((error, i) => (
                           <li key={i}>{error}</li>

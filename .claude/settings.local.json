@@ -8,7 +8,8 @@
       "Bash(npx shadcn@latest add:*)",
       "Bash(npm run lint)",
       "WebSearch",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(npm audit:*)"
     ],
     "deny": [
       "Bash(npm run build:*)"

@@ -41,7 +41,7 @@ export function EditTransactionDialog({
   const [description, setDescription] = useState("");
   const [amount, setAmount] = useState("");
   const [categoryId, setCategoryId] = useState<string>("");
-  const [source, setSource] = useState<"CIBC" | "AMEX" | "Manual">("Manual");
+  const [source, setSource] = useState<string>("Manual");
   const [transactionType, setTransactionType] = useState<"expense" | "income">("expense");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
