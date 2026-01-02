@@ -288,7 +288,7 @@ export default function DashboardPage() {
   const currentMonth = now.getMonth();
 
   // View mode: "all", "year", or "month"
-  const [viewMode, setViewMode] = useState<"all" | "year" | "month">("year");
+  const [viewMode, setViewMode] = useState<"all" | "year" | "month">("all");
 
   // Auto-snapshot logic - ensure daily snapshot exists (runs in background with rate limiting)
   const { startBackgroundSnapshot } = useSnapshot();
