@@ -7,6 +7,7 @@ import { ModeToggle } from "@/components/mode-toggle";
 import { PrivacyToggle } from "@/components/privacy-toggle";
 import { PageHeaderProvider, usePageHeader } from "@/lib/page-header-context";
 import { UnsavedChangesProvider } from "@/lib/unsaved-changes-context";
+import { useAuth } from "@/lib/auth-context";
 import {
   Tooltip,
   TooltipContent,
@@ -69,7 +70,18 @@ function ScrollableContent({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function SidebarLayout({ children }: { children: React.ReactNode }) {
+export default function MainLayout({ children }: { children: React.ReactNode }) {
+  const { isLoading } = useAuth();
+
+  // Show loading state while checking auth
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
   return (
     <UnsavedChangesProvider>
       <SidebarProvider>

@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/imports/[id]
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const importId = parseInt(id, 10);
 
@@ -20,7 +23,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const result = await db
       .select()
       .from(schema.imports)
-      .where(eq(schema.imports.id, importId))
+      .where(
+        and(
+          eq(schema.imports.id, importId),
+          eq(schema.imports.userId, userId)
+        )
+      )
       .limit(1);
 
     if (result.length === 0) {
@@ -32,6 +40,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ data: result[0], success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/imports/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to fetch import", success: false },
@@ -43,6 +57,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 // PATCH /api/imports/[id] - Update import record
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const importId = parseInt(id, 10);
 
@@ -55,11 +71,16 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const body = await request.json();
 
-    // Check if import exists
+    // Check if import exists and belongs to user
     const existing = await db
       .select()
       .from(schema.imports)
-      .where(eq(schema.imports.id, importId))
+      .where(
+        and(
+          eq(schema.imports.id, importId),
+          eq(schema.imports.userId, userId)
+        )
+      )
       .limit(1);
 
     if (existing.length === 0) {
@@ -76,10 +97,21 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
         transactionCount: body.transactionCount ?? existing[0].transactionCount,
         totalAmount: body.totalAmount ?? existing[0].totalAmount,
       })
-      .where(eq(schema.imports.id, importId));
+      .where(
+        and(
+          eq(schema.imports.id, importId),
+          eq(schema.imports.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { updated: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("PATCH /api/imports/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update import", success: false },
@@ -91,6 +123,8 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 // DELETE /api/imports/[id] - Also deletes associated transactions
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const importId = parseInt(id, 10);
 
@@ -101,11 +135,16 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Check if import exists
+    // Check if import exists and belongs to user
     const existing = await db
       .select()
       .from(schema.imports)
-      .where(eq(schema.imports.id, importId))
+      .where(
+        and(
+          eq(schema.imports.id, importId),
+          eq(schema.imports.userId, userId)
+        )
+      )
       .limit(1);
 
     if (existing.length === 0) {
@@ -115,16 +154,34 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Delete associated transactions first
+    // Delete associated transactions first (filtered by user)
     await db
       .delete(schema.transactions)
-      .where(eq(schema.transactions.importId, importId));
+      .where(
+        and(
+          eq(schema.transactions.importId, importId),
+          eq(schema.transactions.userId, userId)
+        )
+      );
 
     // Delete the import
-    await db.delete(schema.imports).where(eq(schema.imports.id, importId));
+    await db
+      .delete(schema.imports)
+      .where(
+        and(
+          eq(schema.imports.id, importId),
+          eq(schema.imports.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { deleted: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("DELETE /api/imports/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to delete import", success: false },

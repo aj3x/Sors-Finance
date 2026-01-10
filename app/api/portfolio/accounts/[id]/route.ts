@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/portfolio/accounts/[id]
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const accountId = parseInt(id, 10);
 
@@ -20,7 +23,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const result = await db
       .select()
       .from(schema.portfolioAccounts)
-      .where(eq(schema.portfolioAccounts.id, accountId))
+      .where(
+        and(
+          eq(schema.portfolioAccounts.id, accountId),
+          eq(schema.portfolioAccounts.userId, userId)
+        )
+      )
       .limit(1);
 
     if (result.length === 0) {
@@ -32,6 +40,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ data: result[0], success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/portfolio/accounts/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to fetch account", success: false },
@@ -43,6 +57,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 // PUT /api/portfolio/accounts/[id]
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const accountId = parseInt(id, 10);
 
@@ -59,10 +75,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     await db
       .update(schema.portfolioAccounts)
       .set({ name, updatedAt: now })
-      .where(eq(schema.portfolioAccounts.id, accountId));
+      .where(
+        and(
+          eq(schema.portfolioAccounts.id, accountId),
+          eq(schema.portfolioAccounts.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { updated: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("PUT /api/portfolio/accounts/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update account", success: false },
@@ -74,6 +101,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 // DELETE /api/portfolio/accounts/[id]
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const accountId = parseInt(id, 10);
 
@@ -84,18 +113,34 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Delete items first (cascade)
+    // Delete items first (cascade) - filtered by user
     await db
       .delete(schema.portfolioItems)
-      .where(eq(schema.portfolioItems.accountId, accountId));
+      .where(
+        and(
+          eq(schema.portfolioItems.accountId, accountId),
+          eq(schema.portfolioItems.userId, userId)
+        )
+      );
 
     // Delete account
     await db
       .delete(schema.portfolioAccounts)
-      .where(eq(schema.portfolioAccounts.id, accountId));
+      .where(
+        and(
+          eq(schema.portfolioAccounts.id, accountId),
+          eq(schema.portfolioAccounts.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { deleted: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("DELETE /api/portfolio/accounts/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to delete account", success: false },

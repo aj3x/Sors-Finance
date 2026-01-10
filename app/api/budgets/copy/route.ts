@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { eq, and, isNull } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // POST /api/budgets/copy
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { fromYear, fromMonth, toYear, toMonth } = await request.json();
 
     if (fromYear === undefined || toYear === undefined) {
@@ -16,18 +19,30 @@ export async function POST(request: NextRequest) {
 
     const now = new Date();
 
-    // Get source budgets
+    // Get source budgets for this user
     let sourceBudgets;
     if (fromMonth === null || fromMonth === undefined) {
       sourceBudgets = await db
         .select()
         .from(schema.budgets)
-        .where(and(eq(schema.budgets.year, fromYear), isNull(schema.budgets.month)));
+        .where(
+          and(
+            eq(schema.budgets.year, fromYear),
+            isNull(schema.budgets.month),
+            eq(schema.budgets.userId, userId)
+          )
+        );
     } else {
       sourceBudgets = await db
         .select()
         .from(schema.budgets)
-        .where(and(eq(schema.budgets.year, fromYear), eq(schema.budgets.month, fromMonth)));
+        .where(
+          and(
+            eq(schema.budgets.year, fromYear),
+            eq(schema.budgets.month, fromMonth),
+            eq(schema.budgets.userId, userId)
+          )
+        );
     }
 
     if (sourceBudgets.length === 0) {
@@ -40,7 +55,7 @@ export async function POST(request: NextRequest) {
     let copiedCount = 0;
 
     for (const budget of sourceBudgets) {
-      // Check if target budget already exists
+      // Check if target budget already exists for this user
       let existing;
       if (toMonthValue === null) {
         existing = await db
@@ -50,7 +65,8 @@ export async function POST(request: NextRequest) {
             and(
               eq(schema.budgets.categoryId, budget.categoryId),
               eq(schema.budgets.year, toYear),
-              isNull(schema.budgets.month)
+              isNull(schema.budgets.month),
+              eq(schema.budgets.userId, userId)
             )
           )
           .limit(1);
@@ -62,7 +78,8 @@ export async function POST(request: NextRequest) {
             and(
               eq(schema.budgets.categoryId, budget.categoryId),
               eq(schema.budgets.year, toYear),
-              eq(schema.budgets.month, toMonthValue)
+              eq(schema.budgets.month, toMonthValue),
+              eq(schema.budgets.userId, userId)
             )
           )
           .limit(1);
@@ -75,6 +92,7 @@ export async function POST(request: NextRequest) {
           year: toYear,
           month: toMonthValue,
           amount: budget.amount,
+          userId,
           createdAt: now,
           updatedAt: now,
         });
@@ -84,6 +102,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: { copied: copiedCount }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("POST /api/budgets/copy error:", error);
     return NextResponse.json(
       { error: "Failed to copy budgets", success: false },

@@ -1,21 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { eq, and, gte, lte, ne, sql } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // GET /api/transactions/aggregations?type=spending&year=2024&month=1
 // Types: spending, totals, trend, allTime, allTimeByCategory, allTimeTrend, count
 export async function GET(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get("type") || "spending";
     const year = searchParams.get("year");
     const month = searchParams.get("month");
 
-    // Get excluded category
+    // Get excluded category for this user
     const excludedCat = await db
       .select()
       .from(schema.categories)
-      .where(eq(schema.categories.name, "Excluded"))
+      .where(
+        and(
+          eq(schema.categories.name, "Excluded"),
+          eq(schema.categories.userId, userId)
+        )
+      )
       .limit(1);
     const excludedId = excludedCat[0]?.id;
 
@@ -42,19 +50,22 @@ export async function GET(request: NextRequest) {
           endDate = new Date(yearNum, 11, 31, 23, 59, 59);
         }
 
+        const conditions = [
+          eq(schema.transactions.userId, userId),
+          gte(schema.transactions.date, startDate),
+          lte(schema.transactions.date, endDate),
+        ];
+        if (excludedId) {
+          conditions.push(ne(schema.transactions.categoryId, excludedId));
+        }
+
         const results = await db
           .select({
             categoryId: schema.transactions.categoryId,
             total: sql<number>`SUM(${schema.transactions.amountOut})`,
           })
           .from(schema.transactions)
-          .where(
-            and(
-              gte(schema.transactions.date, startDate),
-              lte(schema.transactions.date, endDate),
-              excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined
-            )
-          )
+          .where(and(...conditions))
           .groupBy(schema.transactions.categoryId);
 
         const spendingMap: Record<number, number> = {};
@@ -81,19 +92,22 @@ export async function GET(request: NextRequest) {
         const startDate = new Date(yearNum, 0, 1);
         const endDate = yearNum === now.getFullYear() ? now : new Date(yearNum, 11, 31, 23, 59, 59);
 
+        const conditions = [
+          eq(schema.transactions.userId, userId),
+          gte(schema.transactions.date, startDate),
+          lte(schema.transactions.date, endDate),
+        ];
+        if (excludedId) {
+          conditions.push(ne(schema.transactions.categoryId, excludedId));
+        }
+
         const results = await db
           .select({
             categoryId: schema.transactions.categoryId,
             total: sql<number>`SUM(${schema.transactions.amountOut})`,
           })
           .from(schema.transactions)
-          .where(
-            and(
-              gte(schema.transactions.date, startDate),
-              lte(schema.transactions.date, endDate),
-              excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined
-            )
-          )
+          .where(and(...conditions))
           .groupBy(schema.transactions.categoryId);
 
         const spendingMap: Record<number, number> = {};
@@ -128,19 +142,22 @@ export async function GET(request: NextRequest) {
           endDate = new Date(yearNum, 11, 31, 23, 59, 59);
         }
 
+        const conditions = [
+          eq(schema.transactions.userId, userId),
+          gte(schema.transactions.date, startDate),
+          lte(schema.transactions.date, endDate),
+        ];
+        if (excludedId) {
+          conditions.push(ne(schema.transactions.categoryId, excludedId));
+        }
+
         const results = await db
           .select({
             income: sql<number>`SUM(${schema.transactions.amountIn})`,
             expenses: sql<number>`SUM(${schema.transactions.amountOut})`,
           })
           .from(schema.transactions)
-          .where(
-            and(
-              gte(schema.transactions.date, startDate),
-              lte(schema.transactions.date, endDate),
-              excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined
-            )
-          );
+          .where(and(...conditions));
 
         return NextResponse.json({
           data: {
@@ -152,13 +169,18 @@ export async function GET(request: NextRequest) {
       }
 
       case "allTimeTotals": {
+        const conditions = [eq(schema.transactions.userId, userId)];
+        if (excludedId) {
+          conditions.push(ne(schema.transactions.categoryId, excludedId));
+        }
+
         const results = await db
           .select({
             income: sql<number>`SUM(${schema.transactions.amountIn})`,
             expenses: sql<number>`SUM(${schema.transactions.amountOut})`,
           })
           .from(schema.transactions)
-          .where(excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined);
+          .where(and(...conditions));
 
         return NextResponse.json({
           data: {
@@ -170,13 +192,18 @@ export async function GET(request: NextRequest) {
       }
 
       case "allTimeByCategory": {
+        const conditions = [eq(schema.transactions.userId, userId)];
+        if (excludedId) {
+          conditions.push(ne(schema.transactions.categoryId, excludedId));
+        }
+
         const results = await db
           .select({
             categoryId: schema.transactions.categoryId,
             total: sql<number>`SUM(${schema.transactions.amountOut})`,
           })
           .from(schema.transactions)
-          .where(excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined)
+          .where(and(...conditions))
           .groupBy(schema.transactions.categoryId);
 
         const spendingMap: Record<number, number> = {};
@@ -206,19 +233,22 @@ export async function GET(request: NextRequest) {
           const startDate = new Date(yearNum, m, 1);
           const endDate = new Date(yearNum, m + 1, 0, 23, 59, 59);
 
+          const conditions = [
+            eq(schema.transactions.userId, userId),
+            gte(schema.transactions.date, startDate),
+            lte(schema.transactions.date, endDate),
+          ];
+          if (excludedId) {
+            conditions.push(ne(schema.transactions.categoryId, excludedId));
+          }
+
           const results = await db
             .select({
               income: sql<number>`SUM(${schema.transactions.amountIn})`,
               expenses: sql<number>`SUM(${schema.transactions.amountOut})`,
             })
             .from(schema.transactions)
-            .where(
-              and(
-                gte(schema.transactions.date, startDate),
-                lte(schema.transactions.date, endDate),
-                excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined
-              )
-            );
+            .where(and(...conditions));
 
           trend.push({
             month: m,
@@ -246,17 +276,20 @@ export async function GET(request: NextRequest) {
         const startDate = new Date(yearNum, monthNum, 1);
         const endDate = new Date(yearNum, monthNum + 1, 0, 23, 59, 59);
 
-        // Get all transactions for the month
+        // Get all transactions for the month for this user
+        const conditions = [
+          eq(schema.transactions.userId, userId),
+          gte(schema.transactions.date, startDate),
+          lte(schema.transactions.date, endDate),
+        ];
+        if (excludedId) {
+          conditions.push(ne(schema.transactions.categoryId, excludedId));
+        }
+
         const transactions = await db
           .select()
           .from(schema.transactions)
-          .where(
-            and(
-              gte(schema.transactions.date, startDate),
-              lte(schema.transactions.date, endDate),
-              excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined
-            )
-          );
+          .where(and(...conditions));
 
         // Group by day
         const dailyData: Record<number, { income: number; expenses: number }> = {};
@@ -281,11 +314,16 @@ export async function GET(request: NextRequest) {
       }
 
       case "allTimeMonthlyTrend": {
-        // Get all transactions grouped by year/month
+        // Get all transactions grouped by year/month for this user
+        const conditions = [eq(schema.transactions.userId, userId)];
+        if (excludedId) {
+          conditions.push(ne(schema.transactions.categoryId, excludedId));
+        }
+
         const allTransactions = await db
           .select()
           .from(schema.transactions)
-          .where(excludedId ? ne(schema.transactions.categoryId, excludedId) : undefined);
+          .where(and(...conditions));
 
         const monthlyData: Record<string, { income: number; expenses: number }> = {};
 
@@ -341,6 +379,7 @@ export async function GET(request: NextRequest) {
             .from(schema.transactions)
             .where(
               and(
+                eq(schema.transactions.userId, userId),
                 gte(schema.transactions.date, startDate),
                 lte(schema.transactions.date, endDate)
               )
@@ -348,15 +387,19 @@ export async function GET(request: NextRequest) {
         } else {
           countResult = await db
             .select({ count: sql<number>`COUNT(*)` })
-            .from(schema.transactions);
+            .from(schema.transactions)
+            .where(eq(schema.transactions.userId, userId));
         }
 
         return NextResponse.json({ data: countResult[0]?.count || 0, success: true });
       }
 
       case "availablePeriods": {
-        // Get all unique year/month combinations
-        const allTransactions = await db.select().from(schema.transactions);
+        // Get all unique year/month combinations for this user
+        const allTransactions = await db
+          .select()
+          .from(schema.transactions)
+          .where(eq(schema.transactions.userId, userId));
 
         const monthsByYear = new Map<number, Set<number>>();
 
@@ -389,6 +432,12 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/transactions/aggregations error:", error);
     return NextResponse.json(
       { error: "Failed to fetch aggregations", success: false },

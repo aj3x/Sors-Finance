@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { eq, and, gte, lte, desc, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // GET /api/transactions?startDate=...&endDate=...&categoryId=...&source=...&limit=...&offset=...
 export async function GET(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const searchParams = request.nextUrl.searchParams;
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
@@ -14,8 +17,8 @@ export async function GET(request: NextRequest) {
     const limit = searchParams.get("limit");
     const offset = searchParams.get("offset");
 
-    // Build conditions
-    const conditions = [];
+    // Build conditions - always filter by userId
+    const conditions = [eq(schema.transactions.userId, userId)];
 
     if (startDate) {
       conditions.push(gte(schema.transactions.date, new Date(startDate)));
@@ -33,11 +36,8 @@ export async function GET(request: NextRequest) {
     let query = db
       .select()
       .from(schema.transactions)
+      .where(and(...conditions))
       .orderBy(desc(schema.transactions.date));
-
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as typeof query;
-    }
 
     if (limit) {
       query = query.limit(parseInt(limit, 10)) as typeof query;
@@ -66,6 +66,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: transactions, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/transactions error:", error);
     return NextResponse.json(
       { error: "Failed to fetch transactions", success: false },
@@ -77,6 +83,8 @@ export async function GET(request: NextRequest) {
 // POST /api/transactions (single transaction)
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const body = await request.json();
     const now = new Date();
 
@@ -93,6 +101,7 @@ export async function POST(request: NextRequest) {
         source: body.source || "Manual",
         categoryId: body.categoryId || null,
         importId: body.importId || null,
+        userId,
         createdAt: now,
         updatedAt: now,
       })
@@ -100,6 +109,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: { id: result[0].id }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("POST /api/transactions error:", error);
     return NextResponse.json(
       { error: "Failed to create transaction", success: false },
@@ -111,6 +126,8 @@ export async function POST(request: NextRequest) {
 // DELETE /api/transactions (bulk delete)
 export async function DELETE(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { ids } = await request.json();
 
     if (!Array.isArray(ids) || ids.length === 0) {
@@ -122,10 +139,21 @@ export async function DELETE(request: NextRequest) {
 
     await db
       .delete(schema.transactions)
-      .where(inArray(schema.transactions.id, ids));
+      .where(
+        and(
+          inArray(schema.transactions.id, ids),
+          eq(schema.transactions.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { deleted: ids.length }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("DELETE /api/transactions error:", error);
     return NextResponse.json(
       { error: "Failed to delete transactions", success: false },

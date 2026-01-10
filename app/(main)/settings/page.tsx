@@ -16,6 +16,8 @@ import {
   ChevronsUpDown,
   Clock,
   Info,
+  LogOut,
+  User,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,6 +79,7 @@ import {
   setSetting,
 } from "@/lib/db/client";
 import { useSetPageHeader } from "@/lib/page-header-context";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import * as XLSX from "xlsx";
 
@@ -197,6 +200,18 @@ export default function SettingsPage() {
 
   // Page header
   const sentinelRef = useSetPageHeader("Settings");
+
+  // Auth
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout failed:", error);
+      toast.error("Failed to log out");
+    }
+  };
 
   // Generate timezone options with offsets
   const timezoneOptions = useMemo(() => {
@@ -713,6 +728,36 @@ export default function SettingsPage() {
 
         {/* General Tab */}
         <TabsContent value="general" className="space-y-6 max-w-2xl">
+          {/* Account */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                Account
+              </CardTitle>
+              <CardDescription>
+                Your account information
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <User className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="font-medium">{user?.username}</p>
+                    <p className="text-sm text-muted-foreground">Logged in</p>
+                  </div>
+                </div>
+                <Button variant="outline" onClick={handleLogout}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Log out
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Currency Setting */}
           <Card>
             <CardHeader>

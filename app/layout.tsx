@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
-import { SidebarLayout } from "@/components/SidebarLayout";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AuthProvider } from "@/lib/auth-context";
 import { DatabaseProvider } from "@/components/DatabaseProvider";
 import { PrivacyProvider } from "@/lib/privacy-context";
 import { SnapshotProvider } from "@/lib/snapshot-context";
@@ -44,14 +44,16 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <DatabaseProvider>
-            <PrivacyProvider>
-              <SnapshotProvider>
-                <SidebarLayout>{children}</SidebarLayout>
-                <Toaster richColors />
-              </SnapshotProvider>
-            </PrivacyProvider>
-          </DatabaseProvider>
+          <AuthProvider>
+            <DatabaseProvider>
+              <PrivacyProvider>
+                <SnapshotProvider>
+                  {children}
+                  <Toaster richColors />
+                </SnapshotProvider>
+              </PrivacyProvider>
+            </DatabaseProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

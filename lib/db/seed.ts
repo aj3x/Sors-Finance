@@ -26,6 +26,90 @@ const DEFAULT_CATEGORIES = [
   { name: "Healthcare", keywords: ["CVS", "WALGREENS", "PHARMACY", "MEDICAL", "DENTAL", "CLINIC", "HOSPITAL"] },
 ];
 
+export { DEFAULT_CATEGORIES };
+
+/**
+ * Seed default categories for a specific user.
+ * This should be called when a new user registers.
+ */
+export async function seedDefaultCategoriesForUser(userId: number): Promise<void> {
+  // Check if user already has categories
+  const existingCategories = await db
+    .select()
+    .from(schema.categories)
+    .where(eq(schema.categories.userId, userId));
+
+  if (existingCategories.length > 0) {
+    // User already has categories, ensure system categories exist
+    await ensureSystemCategoriesForUser(userId, existingCategories);
+    return;
+  }
+
+  const now = new Date();
+  let order = 0;
+
+  // Add system categories first
+  for (const cat of SYSTEM_CATEGORY_DEFS) {
+    await db.insert(schema.categories).values({
+      uuid: randomUUID(),
+      name: cat.name,
+      keywords: cat.keywords,
+      order: order++,
+      isSystem: cat.isSystem,
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  // Add default user categories
+  for (const cat of DEFAULT_CATEGORIES) {
+    await db.insert(schema.categories).values({
+      uuid: randomUUID(),
+      name: cat.name,
+      keywords: cat.keywords,
+      order: order++,
+      isSystem: false,
+      userId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  console.log(`[Seed] Seeded default categories for user ${userId}`);
+}
+
+// Ensure system categories exist for a user (for database migrations)
+async function ensureSystemCategoriesForUser(
+  userId: number,
+  existingCategories: typeof schema.categories.$inferSelect[]
+): Promise<void> {
+  const now = new Date();
+
+  for (const sysCat of SYSTEM_CATEGORY_DEFS) {
+    const exists = existingCategories.find(c => c.name === sysCat.name);
+    if (!exists) {
+      // Add missing system category at the beginning
+      await db.insert(schema.categories).values({
+        uuid: randomUUID(),
+        name: sysCat.name,
+        keywords: sysCat.keywords,
+        order: -1, // Will be at the top
+        isSystem: true,
+        userId,
+        createdAt: now,
+        updatedAt: now,
+      });
+    } else if (!exists.isSystem) {
+      // Mark existing category as system
+      await db
+        .update(schema.categories)
+        .set({ isSystem: true, updatedAt: now })
+        .where(eq(schema.categories.id, exists.id));
+    }
+  }
+}
+
+// Legacy function for backwards compatibility (seeds for null userId / global categories)
 export async function seedDefaultCategories(): Promise<void> {
   const existingCategories = await db.select().from(schema.categories);
 
@@ -66,7 +150,7 @@ export async function seedDefaultCategories(): Promise<void> {
   console.log("[Seed] Seeded default categories");
 }
 
-// Ensure system categories exist (for database migrations)
+// Ensure system categories exist (for database migrations) - legacy version
 async function ensureSystemCategories(existingCategories: typeof schema.categories.$inferSelect[]): Promise<void> {
   const now = new Date();
 

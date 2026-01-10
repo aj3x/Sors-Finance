@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { eq, and, isNull } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // GET /api/budgets?year=2024&month=1
 export async function GET(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const year = request.nextUrl.searchParams.get("year");
     const month = request.nextUrl.searchParams.get("month");
 
@@ -19,18 +22,30 @@ export async function GET(request: NextRequest) {
     let results;
 
     if (month === null || month === "null" || month === "") {
-      // Get yearly budgets (month is null)
+      // Get yearly budgets (month is null) for this user
       results = await db
         .select()
         .from(schema.budgets)
-        .where(and(eq(schema.budgets.year, yearNum), isNull(schema.budgets.month)));
+        .where(
+          and(
+            eq(schema.budgets.year, yearNum),
+            isNull(schema.budgets.month),
+            eq(schema.budgets.userId, userId)
+          )
+        );
     } else {
-      // Get monthly budgets
+      // Get monthly budgets for this user
       const monthNum = parseInt(month, 10);
       results = await db
         .select()
         .from(schema.budgets)
-        .where(and(eq(schema.budgets.year, yearNum), eq(schema.budgets.month, monthNum)));
+        .where(
+          and(
+            eq(schema.budgets.year, yearNum),
+            eq(schema.budgets.month, monthNum),
+            eq(schema.budgets.userId, userId)
+          )
+        );
     }
 
     const budgets = results.map((row) => ({
@@ -45,6 +60,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: budgets, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/budgets error:", error);
     return NextResponse.json(
       { error: "Failed to fetch budgets", success: false },
@@ -56,6 +77,8 @@ export async function GET(request: NextRequest) {
 // POST /api/budgets (upsert)
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { categoryId, year, month, amount } = await request.json();
 
     if (!categoryId || !year || amount === undefined) {
@@ -68,7 +91,7 @@ export async function POST(request: NextRequest) {
     const now = new Date();
     const monthValue = month === null || month === undefined ? null : month;
 
-    // Check if budget exists
+    // Check if budget exists for this user
     let existing;
     if (monthValue === null) {
       existing = await db
@@ -78,7 +101,8 @@ export async function POST(request: NextRequest) {
           and(
             eq(schema.budgets.categoryId, categoryId),
             eq(schema.budgets.year, year),
-            isNull(schema.budgets.month)
+            isNull(schema.budgets.month),
+            eq(schema.budgets.userId, userId)
           )
         )
         .limit(1);
@@ -90,7 +114,8 @@ export async function POST(request: NextRequest) {
           and(
             eq(schema.budgets.categoryId, categoryId),
             eq(schema.budgets.year, year),
-            eq(schema.budgets.month, monthValue)
+            eq(schema.budgets.month, monthValue),
+            eq(schema.budgets.userId, userId)
           )
         )
         .limit(1);
@@ -103,7 +128,12 @@ export async function POST(request: NextRequest) {
       await db
         .update(schema.budgets)
         .set({ amount, updatedAt: now })
-        .where(eq(schema.budgets.id, existing[0].id));
+        .where(
+          and(
+            eq(schema.budgets.id, existing[0].id),
+            eq(schema.budgets.userId, userId)
+          )
+        );
       budgetId = existing[0].id;
     } else {
       // Create new
@@ -114,6 +144,7 @@ export async function POST(request: NextRequest) {
           year,
           month: monthValue,
           amount,
+          userId,
           createdAt: now,
           updatedAt: now,
         })
@@ -123,6 +154,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: { id: budgetId }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("POST /api/budgets error:", error);
     return NextResponse.json(
       { error: "Failed to save budget", success: false },

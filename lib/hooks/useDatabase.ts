@@ -84,6 +84,10 @@ export function useInitDatabase() {
       .then((res) => {
         if (res.ok) {
           setIsReady(true);
+        } else if (res.status === 401) {
+          // User is not authenticated - this is fine, auth will handle redirect
+          // Mark as ready so we don't block rendering
+          setIsReady(true);
         } else {
           throw new Error("API not ready");
         }

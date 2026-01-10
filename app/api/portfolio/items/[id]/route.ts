@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/portfolio/items/[id]
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const itemId = parseInt(id, 10);
 
@@ -20,7 +23,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const result = await db
       .select()
       .from(schema.portfolioItems)
-      .where(eq(schema.portfolioItems.id, itemId))
+      .where(
+        and(
+          eq(schema.portfolioItems.id, itemId),
+          eq(schema.portfolioItems.userId, userId)
+        )
+      )
       .limit(1);
 
     if (result.length === 0) {
@@ -32,6 +40,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ data: result[0], success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/portfolio/items/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to fetch item", success: false },
@@ -43,6 +57,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 // PUT /api/portfolio/items/[id]
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const itemId = parseInt(id, 10);
 
@@ -74,10 +90,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     await db
       .update(schema.portfolioItems)
       .set(updateValues)
-      .where(eq(schema.portfolioItems.id, itemId));
+      .where(
+        and(
+          eq(schema.portfolioItems.id, itemId),
+          eq(schema.portfolioItems.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { updated: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("PUT /api/portfolio/items/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update item", success: false },
@@ -89,6 +116,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 // DELETE /api/portfolio/items/[id]?hard=false
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const itemId = parseInt(id, 10);
     const hard = request.nextUrl.searchParams.get("hard") === "true";
@@ -104,18 +133,34 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       // Hard delete
       await db
         .delete(schema.portfolioItems)
-        .where(eq(schema.portfolioItems.id, itemId));
+        .where(
+          and(
+            eq(schema.portfolioItems.id, itemId),
+            eq(schema.portfolioItems.userId, userId)
+          )
+        );
     } else {
       // Soft delete (set isActive to false)
       const now = new Date();
       await db
         .update(schema.portfolioItems)
         .set({ isActive: false, updatedAt: now })
-        .where(eq(schema.portfolioItems.id, itemId));
+        .where(
+          and(
+            eq(schema.portfolioItems.id, itemId),
+            eq(schema.portfolioItems.userId, userId)
+          )
+        );
     }
 
     return NextResponse.json({ data: { deleted: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("DELETE /api/portfolio/items/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to delete item", success: false },
@@ -127,6 +172,8 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
 // PATCH /api/portfolio/items/[id] - For restore
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const itemId = parseInt(id, 10);
     const { action } = await request.json();
@@ -143,7 +190,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       await db
         .update(schema.portfolioItems)
         .set({ isActive: true, updatedAt: now })
-        .where(eq(schema.portfolioItems.id, itemId));
+        .where(
+          and(
+            eq(schema.portfolioItems.id, itemId),
+            eq(schema.portfolioItems.userId, userId)
+          )
+        );
 
       return NextResponse.json({ data: { restored: true }, success: true });
     }
@@ -153,6 +205,12 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       { status: 400 }
     );
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("PATCH /api/portfolio/items/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to restore item", success: false },
