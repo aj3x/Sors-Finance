@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 // POST /api/auth/login
 export async function POST(request: NextRequest) {
   try {
-    const { username, password } = await request.json();
+    const { username, password, rememberMe = true } = await request.json();
 
     // Validate input
     if (!username || typeof username !== "string") {
@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    setSessionCookie(response, token, expiresAt);
+    setSessionCookie(response, token, rememberMe ? expiresAt : undefined);
 
     return response;
   } catch (error) {

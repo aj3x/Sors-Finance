@@ -10,27 +10,41 @@ export const SESSION_COOKIE_NAME = "sors_session";
 
 /**
  * Cookie options for the session cookie.
+ * @param expiresAt - If provided, creates a persistent cookie. If undefined, creates a session cookie.
  */
-function getCookieOptions(expiresAt: Date) {
-  return {
+function getCookieOptions(expiresAt?: Date) {
+  const options: {
+    httpOnly: boolean;
+    secure: boolean;
+    sameSite: "lax";
+    path: string;
+    expires?: Date;
+  } = {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax" as const,
     path: "/",
-    expires: expiresAt,
   };
+
+  // Only set expires for persistent cookies ("Remember me")
+  // Without expires, it becomes a session cookie that expires when browser closes
+  if (expiresAt) {
+    options.expires = expiresAt;
+  }
+
+  return options;
 }
 
 /**
  * Set the session cookie on a response.
  * @param response - The NextResponse to set the cookie on
  * @param token - The session token
- * @param expiresAt - When the session expires
+ * @param expiresAt - When the session expires. If undefined, creates a session cookie.
  */
 export function setSessionCookie(
   response: NextResponse,
   token: string,
-  expiresAt: Date
+  expiresAt?: Date
 ): void {
   response.cookies.set(SESSION_COOKIE_NAME, token, getCookieOptions(expiresAt));
 }

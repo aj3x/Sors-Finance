@@ -1,7 +1,7 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
 import { useState, useRef, useMemo } from "react";
-import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -247,12 +247,10 @@ export function FileUpload({
                             ) : (
                               <div className="flex items-center gap-2">
                                 {getBankOption(uploadedFile.bankId)?.logo && (
-                                  <Image
+                                  <img
                                     src={getBankOption(uploadedFile.bankId)!.logo!}
                                     alt={uploadedFile.bankId}
-                                    width={16}
-                                    height={16}
-                                    className="h-4 w-auto"
+                                    className="h-4 w-auto object-contain"
                                   />
                                 )}
                                 <span>{getBankOption(uploadedFile.bankId)?.name || uploadedFile.bankId}</span>
@@ -265,12 +263,10 @@ export function FileUpload({
                             <SelectItem key={bank.id} value={bank.id}>
                               <div className="flex items-center gap-2">
                                 {bank.logo && (
-                                  <Image
+                                  <img
                                     src={bank.logo}
                                     alt={bank.name}
-                                    width={16}
-                                    height={16}
-                                    className="h-4 w-auto"
+                                    className="h-4 w-auto object-contain"
                                   />
                                 )}
                                 <span>{bank.name}</span>

@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   InputGroup,
   InputGroupAddon,
@@ -27,6 +29,7 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
@@ -41,7 +44,7 @@ export default function LoginPage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, rememberMe }),
       });
 
       const data = await response.json();
@@ -105,6 +108,20 @@ export default function LoginPage() {
               </InputGroupButton>
             </InputGroupAddon>
           </InputGroup>
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id="remember-me"
+              checked={rememberMe}
+              onCheckedChange={(checked) => setRememberMe(checked === true)}
+              disabled={isLoading}
+            />
+            <Label
+              htmlFor="remember-me"
+              className="text-sm font-normal text-muted-foreground cursor-pointer"
+            >
+              Remember me for 30 days
+            </Label>
+          </div>
         </CardContent>
         <CardFooter className="flex flex-col items-stretch gap-6 px-8 pt-10 pb-8">
           <Button type="submit" className="w-full h-11" disabled={isLoading}>
