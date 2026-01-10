@@ -16,6 +16,10 @@ import {
   ChevronsUpDown,
   Clock,
   Info,
+  LogOut,
+  User,
+  Upload,
+  Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -77,8 +81,8 @@ import {
   setSetting,
 } from "@/lib/db/client";
 import { useSetPageHeader } from "@/lib/page-header-context";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
-import * as XLSX from "xlsx";
 
 // Generate timezone list with UTC offsets and friendly names
 function getTimezoneWithOffset(tz: string): { value: string; label: string; offset: number } {
@@ -195,8 +199,29 @@ export default function SettingsPage() {
   const [snapshotTime, setSnapshotTime] = useState("03:00");
   const [isLoadingSnapshotConfig, setIsLoadingSnapshotConfig] = useState(true);
 
+  // Snapshot import/export state
+  const [isExportingSnapshots, setIsExportingSnapshots] = useState(false);
+  const [isImportingSnapshots, setIsImportingSnapshots] = useState(false);
+  const snapshotFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Data import state
+  const [isImporting, setIsImporting] = useState(false);
+  const dataFileInputRef = useRef<HTMLInputElement>(null);
+
   // Page header
   const sentinelRef = useSetPageHeader("Settings");
+
+  // Auth
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error("Logout failed:", error);
+      toast.error("Failed to log out");
+    }
+  };
 
   // Generate timezone options with offsets
   const timezoneOptions = useMemo(() => {
@@ -485,31 +510,28 @@ export default function SettingsPage() {
     return tz?.label || timezone;
   }, [timezone, timezoneOptions]);
 
-  // Data reset handler
-  const handleResetData = async () => {
-    if (resetConfirmText !== "DELETE ALL DATA") {
-      toast.error("Please type 'DELETE ALL DATA' to confirm");
+  // Delete account handler
+  const handleDeleteAccount = async () => {
+    if (resetConfirmText !== "DELETE MY ACCOUNT") {
+      toast.error("Please type 'DELETE MY ACCOUNT' to confirm");
       return;
     }
 
     try {
-      // Clear all data via API
-      const res = await fetch("/api/data", { method: "DELETE" });
+      // Delete account via API
+      const res = await fetch("/api/auth/me", { method: "DELETE" });
       if (!res.ok) {
-        throw new Error("Failed to clear data");
+        throw new Error("Failed to delete account");
       }
 
-      // Clear API key from settings (keep currency and timezone)
+      // Clear local storage settings
       setFinnhubApiKey(undefined);
 
-      // Set flag to show toast after reload
-      sessionStorage.setItem("data-reset-success", "true");
-
-      // Reload the page to reset all state
-      window.location.reload();
+      // Redirect to login page
+      window.location.href = "/login";
     } catch (error) {
-      console.error("Error resetting data:", error);
-      toast.error("Failed to reset data");
+      console.error("Error deleting account:", error);
+      toast.error("Failed to delete account");
     }
   };
 
@@ -524,125 +546,198 @@ export default function SettingsPage() {
       }
       const { data: exportData } = await res.json();
 
-      const transactions = exportData.transactions || [];
-      const categories = exportData.categories || [];
-      const budgets = exportData.budgets || [];
-      const imports = exportData.imports || [];
-      const portfolioItems = exportData.portfolioItems || [];
-      const portfolioAccounts = exportData.portfolioAccounts || [];
-      const portfolioSnapshots = exportData.portfolioSnapshots || [];
+      // Create export object with metadata
+      const jsonExport = {
+        exportedAt: new Date().toISOString(),
+        version: 1,
+        data: exportData,
+      };
 
-      // Create workbook
-      const wb = XLSX.utils.book_new();
+      // Download as JSON
+      const blob = new Blob([JSON.stringify(jsonExport, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sors-finance-export-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
 
-      // Add transactions sheet
-      if (transactions.length > 0) {
-        const transactionsData = transactions.map((t: { date: string; description: string; amountOut: number; amountIn: number; netAmount: number; categoryId: number | null; source: string }) => ({
-          Date: t.date ? String(t.date).split("T")[0] : "",
-          Description: t.description,
-          "Amount Out": t.amountOut,
-          "Amount In": t.amountIn,
-          "Net Amount": t.netAmount,
-          Category: categories.find((c: { id: number; name: string }) => c.id === t.categoryId)?.name || "Uncategorized",
-          Source: t.source,
-        }));
-        const ws = XLSX.utils.json_to_sheet(transactionsData);
-        XLSX.utils.book_append_sheet(wb, ws, "Transactions");
-      }
-
-      // Add categories sheet
-      if (categories.length > 0) {
-        const categoriesData = categories.map((c: { name: string; keywords?: string[]; isSystem: boolean; order: number }) => ({
-          Name: c.name,
-          Keywords: c.keywords?.join(", ") || "",
-          "Is System": c.isSystem ? "Yes" : "No",
-          Order: c.order,
-        }));
-        const ws = XLSX.utils.json_to_sheet(categoriesData);
-        XLSX.utils.book_append_sheet(wb, ws, "Categories");
-      }
-
-      // Add budgets sheet
-      if (budgets.length > 0) {
-        const budgetsData = budgets.map((b: { categoryId: number; amount: number; year: number; month: number }) => ({
-          Category: categories.find((c: { id: number; name: string }) => c.id === b.categoryId)?.name || "",
-          Amount: b.amount,
-          Year: b.year,
-          Month: b.month,
-        }));
-        const ws = XLSX.utils.json_to_sheet(budgetsData);
-        XLSX.utils.book_append_sheet(wb, ws, "Budgets");
-      }
-
-      // Add import history sheet
-      if (imports.length > 0) {
-        const importData = imports.map((i: { importedAt: string; fileName: string; source: string; transactionCount: number; totalAmount: number }) => ({
-          Date: i.importedAt || "",
-          Filename: i.fileName,
-          Source: i.source,
-          "Transaction Count": i.transactionCount,
-          "Total Amount": i.totalAmount,
-        }));
-        const ws = XLSX.utils.json_to_sheet(importData);
-        XLSX.utils.book_append_sheet(wb, ws, "Import History");
-      }
-
-      // Add portfolio accounts sheet
-      if (portfolioAccounts.length > 0) {
-        const accountsData = portfolioAccounts.map((a: { id: number; name: string; bucket: string; order: number }) => ({
-          Name: a.name,
-          Bucket: a.bucket,
-          Order: a.order,
-        }));
-        const ws = XLSX.utils.json_to_sheet(accountsData);
-        XLSX.utils.book_append_sheet(wb, ws, "Portfolio Accounts");
-      }
-
-      // Add portfolio items sheet
-      if (portfolioItems.length > 0) {
-        const itemsData = portfolioItems.map((i: { accountId: number; name: string; currentValue: number; quantity?: number; ticker?: string; currency?: string; pricePerUnit?: number; lastPriceUpdate?: string }) => {
-          const account = portfolioAccounts.find((a: { id: number; name: string }) => a.id === i.accountId);
-          return {
-            Name: i.name,
-            Account: account?.name || "",
-            "Current Value": i.currentValue,
-            Quantity: i.quantity || "",
-            Ticker: i.ticker || "",
-            Currency: i.currency || "",
-            "Price Per Unit": i.pricePerUnit || "",
-            "Last Price Update": i.lastPriceUpdate || "",
-          };
-        });
-        const ws = XLSX.utils.json_to_sheet(itemsData);
-        XLSX.utils.book_append_sheet(wb, ws, "Portfolio Items");
-      }
-
-      // Add portfolio snapshots sheet
-      if (portfolioSnapshots.length > 0) {
-        const snapshotsData = portfolioSnapshots.map((s: { date: string; netWorth: number; totalSavings: number; totalInvestments: number; totalAssets: number; totalDebt: number }) => ({
-          Date: s.date ? String(s.date).split("T")[0] : "",
-          "Net Worth": s.netWorth,
-          "Total Savings": s.totalSavings,
-          "Total Investments": s.totalInvestments,
-          "Total Assets": s.totalAssets,
-          "Total Debt": s.totalDebt,
-        }));
-        const ws = XLSX.utils.json_to_sheet(snapshotsData);
-        XLSX.utils.book_append_sheet(wb, ws, "Portfolio Snapshots");
-      }
-
-      // Generate filename with date
-      const date = new Date().toISOString().split("T")[0];
-      const filename = `sors-finance-export-${date}.xlsx`;
-
-      // Download the file
-      XLSX.writeFile(wb, filename);
       toast.success("Data exported successfully");
     } catch (error) {
       console.error("Error exporting data:", error);
       toast.error("Failed to export data");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // Data import handler
+  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const importData = JSON.parse(text);
+
+      if (!importData.data) {
+        throw new Error("Invalid export file format");
+      }
+
+      // Send to API for import
+      const res = await fetch("/api/data", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(importData.data),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || "Failed to import data");
+      }
+
+      const result = await res.json();
+      const imported = result.data?.imported || {};
+      toast.success(`Imported ${imported.transactions || 0} transactions, ${imported.categories || 0} categories, ${imported.budgets || 0} budgets`);
+
+      // Reload the page to refresh all data
+      window.location.reload();
+    } catch (error) {
+      console.error("Error importing data:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to import data. Check file format.");
+    } finally {
+      setIsImporting(false);
+      // Reset file input
+      if (dataFileInputRef.current) {
+        dataFileInputRef.current.value = "";
+      }
+    }
+  };
+
+  // Snapshot export handler
+  const handleExportSnapshots = async () => {
+    setIsExportingSnapshots(true);
+    try {
+      const res = await fetch("/api/portfolio/snapshots");
+      if (!res.ok) {
+        throw new Error("Failed to fetch snapshots");
+      }
+      const { data: snapshots } = await res.json();
+
+      if (!snapshots || snapshots.length === 0) {
+        toast.error("No snapshots to export");
+        return;
+      }
+
+      // Create export object with metadata
+      const exportData = {
+        exportedAt: new Date().toISOString(),
+        version: 1,
+        count: snapshots.length,
+        snapshots: snapshots.map((s: {
+          date: string;
+          totalSavings: number;
+          totalInvestments: number;
+          totalAssets: number;
+          totalDebt: number;
+          netWorth: number;
+          details: unknown;
+        }) => ({
+          date: s.date,
+          totalSavings: s.totalSavings,
+          totalInvestments: s.totalInvestments,
+          totalAssets: s.totalAssets,
+          totalDebt: s.totalDebt,
+          netWorth: s.netWorth,
+          details: s.details,
+        })),
+      };
+
+      // Download as JSON
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `sors-snapshots-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Exported ${snapshots.length} snapshots`);
+    } catch (error) {
+      console.error("Error exporting snapshots:", error);
+      toast.error("Failed to export snapshots");
+    } finally {
+      setIsExportingSnapshots(false);
+    }
+  };
+
+  // Snapshot import handler
+  const handleImportSnapshots = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImportingSnapshots(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (!data.snapshots || !Array.isArray(data.snapshots)) {
+        throw new Error("Invalid snapshot file format");
+      }
+
+      let imported = 0;
+      let skipped = 0;
+
+      for (const snapshot of data.snapshots) {
+        if (!snapshot.date) {
+          skipped++;
+          continue;
+        }
+
+        try {
+          const res = await fetch("/api/portfolio/snapshots", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              date: snapshot.date,
+              totalSavings: snapshot.totalSavings ?? 0,
+              totalInvestments: snapshot.totalInvestments ?? 0,
+              totalAssets: snapshot.totalAssets ?? 0,
+              totalDebt: snapshot.totalDebt ?? 0,
+              netWorth: snapshot.netWorth ?? 0,
+              details: snapshot.details ?? { accounts: [], items: [] },
+            }),
+          });
+
+          if (res.ok) {
+            imported++;
+          } else {
+            skipped++;
+          }
+        } catch {
+          skipped++;
+        }
+      }
+
+      if (imported > 0) {
+        toast.success(`Imported ${imported} snapshots${skipped > 0 ? `, ${skipped} skipped` : ""}`);
+      } else {
+        toast.error("No snapshots were imported");
+      }
+    } catch (error) {
+      console.error("Error importing snapshots:", error);
+      toast.error("Failed to import snapshots. Check file format.");
+    } finally {
+      setIsImportingSnapshots(false);
+      // Reset file input
+      if (snapshotFileInputRef.current) {
+        snapshotFileInputRef.current.value = "";
+      }
     }
   };
 
@@ -706,13 +801,43 @@ export default function SettingsPage() {
           <TabsTrigger value="preferences">Preferences</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="data">Data</TabsTrigger>
-          {process.env.NODE_ENV === "development" && (
+          {(process.env.NODE_ENV === "development" || user?.username === "joshdev") && (
             <TabsTrigger value="developer">Developer</TabsTrigger>
           )}
         </TabsList>
 
         {/* General Tab */}
         <TabsContent value="general" className="space-y-6 max-w-2xl">
+          {/* Account */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <User className="h-5 w-5" />
+                Account
+              </CardTitle>
+              <CardDescription>
+                Your account information
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+                    <User className="h-5 w-5 text-muted-foreground" />
+                  </div>
+                  <div>
+                    <p className="font-medium">{user?.username}</p>
+                    <p className="text-sm text-muted-foreground">Logged in</p>
+                  </div>
+                </div>
+                <Button variant="outline" onClick={handleLogout}>
+                  <LogOut className="h-4 w-4 mr-2" />
+                  Log out
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Currency Setting */}
           <Card>
             <CardHeader>
@@ -1083,38 +1208,73 @@ export default function SettingsPage() {
 
         {/* Data Tab */}
         <TabsContent value="data" className="space-y-6 max-w-2xl">
-          {/* Export Data */}
+          {/* Import/Export Data */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
-                Export Data
+                <Database className="h-5 w-5" />
+                Import & Export Data
               </CardTitle>
               <CardDescription>
-                Download all your data as an Excel file
+                Backup and restore all your data as a JSON file
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                Export all your transactions, categories, budgets, and portfolio data
-                to an Excel file with multiple sheets.
-              </p>
-              <Button onClick={handleExportData} disabled={isExporting}>
-                <Download className="h-4 w-4 mr-2" />
-                {isExporting ? "Exporting..." : "Export to Excel"}
-              </Button>
+              <div className="flex flex-col sm:flex-row gap-4">
+                <div className="flex-1 space-y-2">
+                  <Label>Export Data</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Download all transactions, categories, budgets, and portfolio data
+                  </p>
+                  <Button onClick={handleExportData} disabled={isExporting} variant="outline">
+                    <Download className="h-4 w-4 mr-2" />
+                    {isExporting ? "Exporting..." : "Export to JSON"}
+                  </Button>
+                </div>
+                <div className="flex-1 space-y-2">
+                  <Label>Import Data</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Restore data from a previously exported JSON file
+                  </p>
+                  <div>
+                    <input
+                      ref={dataFileInputRef}
+                      type="file"
+                      accept=".json"
+                      onChange={handleImportData}
+                      className="hidden"
+                      id="data-import"
+                    />
+                    <Button
+                      onClick={() => dataFileInputRef.current?.click()}
+                      disabled={isImporting}
+                      variant="outline"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {isImporting ? "Importing..." : "Import from JSON"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <Alert>
+                <Info className="h-4 w-4" />
+                <AlertTitle>Note</AlertTitle>
+                <AlertDescription>
+                  Importing will add new records. Existing data with matching IDs will not be duplicated.
+                </AlertDescription>
+              </Alert>
             </CardContent>
           </Card>
 
-          {/* Reset Data */}
+          {/* Delete Account */}
           <Card className="border-destructive/50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-destructive">
                 <Trash2 className="h-5 w-5" />
-                Delete All Data
+                Delete Account
               </CardTitle>
               <CardDescription>
-                Permanently delete all your data. This action cannot be undone.
+                Permanently delete your account and all associated data. This action cannot be undone.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1122,9 +1282,9 @@ export default function SettingsPage() {
                 <AlertTriangle className="h-4 w-4" />
                 <AlertTitle>Warning</AlertTitle>
                 <AlertDescription>
-                  This will permanently delete all your transactions, categories,
-                  budgets, portfolio items, and snapshots. Consider exporting your
-                  data first.
+                  This will permanently delete your account and all associated data
+                  including transactions, categories, budgets, portfolio items, and
+                  snapshots. Consider exporting your data first.
                 </AlertDescription>
               </Alert>
               <Button
@@ -1132,15 +1292,77 @@ export default function SettingsPage() {
                 onClick={() => setShowResetDialog(true)}
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                Delete All Data
+                Delete Account
               </Button>
             </CardContent>
           </Card>
         </TabsContent>
 
         {/* Developer Tab */}
-        {process.env.NODE_ENV === "development" && (
+        {(process.env.NODE_ENV === "development" || user?.username === "joshdev") && (
           <TabsContent value="developer" className="space-y-6">
+            {/* Snapshot History Import/Export */}
+            <Card className="max-w-2xl">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Database className="h-5 w-5" />
+                  Snapshot History
+                </CardTitle>
+                <CardDescription>
+                  Import and export your complete portfolio snapshot history
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex flex-col sm:flex-row gap-3">
+                  <div className="flex-1 space-y-2">
+                    <Label>Export Snapshots</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Download all snapshots as a JSON file for backup or migration
+                    </p>
+                    <Button
+                      onClick={handleExportSnapshots}
+                      disabled={isExportingSnapshots}
+                      variant="outline"
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      {isExportingSnapshots ? "Exporting..." : "Export to JSON"}
+                    </Button>
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <Label>Import Snapshots</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Restore snapshots from a previously exported JSON file
+                    </p>
+                    <div>
+                      <input
+                        ref={snapshotFileInputRef}
+                        type="file"
+                        accept=".json"
+                        onChange={handleImportSnapshots}
+                        className="hidden"
+                        id="snapshot-import"
+                      />
+                      <Button
+                        onClick={() => snapshotFileInputRef.current?.click()}
+                        disabled={isImportingSnapshots}
+                        variant="outline"
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        {isImportingSnapshots ? "Importing..." : "Import from JSON"}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Note</AlertTitle>
+                  <AlertDescription>
+                    Importing snapshots will add new entries. Duplicate dates will create additional snapshots.
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
+
             {/* Primary Colors */}
             <Card>
               <CardHeader>
@@ -1398,27 +1620,29 @@ export default function SettingsPage() {
         )}
       </Tabs>
 
-      {/* Reset Data Confirmation Dialog */}
+      {/* Delete Account Confirmation Dialog */}
       <AlertDialog open={showResetDialog} onOpenChange={setShowResetDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogTitle>Delete your account?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete all your data. This action cannot be undone.
+              This will permanently delete your account and all associated data. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-4">
             <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+              <li>Your user account</li>
               <li>All transactions</li>
-              <li>All categories (except defaults)</li>
+              <li>All categories</li>
               <li>All budgets</li>
               <li>All import history</li>
               <li>All portfolio accounts and items</li>
               <li>All portfolio snapshots</li>
+              <li>All app preferences</li>
             </ul>
             <div>
               <p className="text-sm font-medium mb-3">
-                Type <code className="bg-muted px-1 py-0.5 rounded">DELETE ALL DATA</code> to confirm:
+                Type <code className="bg-muted px-1 py-0.5 rounded">DELETE MY ACCOUNT</code> to confirm:
               </p>
               <Input
                 value={resetConfirmText}
@@ -1433,10 +1657,10 @@ export default function SettingsPage() {
             </AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              onClick={handleResetData}
-              disabled={resetConfirmText !== "DELETE ALL DATA"}
+              onClick={handleDeleteAccount}
+              disabled={resetConfirmText !== "DELETE MY ACCOUNT"}
             >
-              Delete Everything
+              Delete Account
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

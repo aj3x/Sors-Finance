@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // GET /api/portfolio/snapshots?startDate=...&endDate=...&limit=...
 export async function GET(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const searchParams = request.nextUrl.searchParams;
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
@@ -13,7 +16,7 @@ export async function GET(request: NextRequest) {
     const today = searchParams.get("today") === "true";
 
     if (today) {
-      // Check if snapshot exists today
+      // Check if snapshot exists today for this user
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
@@ -24,7 +27,8 @@ export async function GET(request: NextRequest) {
         .where(
           and(
             gte(schema.portfolioSnapshots.date, startOfDay),
-            lte(schema.portfolioSnapshots.date, endOfDay)
+            lte(schema.portfolioSnapshots.date, endOfDay),
+            eq(schema.portfolioSnapshots.userId, userId)
           )
         )
         .limit(1);
@@ -36,7 +40,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const conditions = [];
+    const conditions = [eq(schema.portfolioSnapshots.userId, userId)];
 
     if (startDate) {
       conditions.push(gte(schema.portfolioSnapshots.date, new Date(startDate)));
@@ -48,11 +52,8 @@ export async function GET(request: NextRequest) {
     let query = db
       .select()
       .from(schema.portfolioSnapshots)
+      .where(and(...conditions))
       .orderBy(desc(schema.portfolioSnapshots.date));
-
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as typeof query;
-    }
 
     if (limit) {
       query = query.limit(parseInt(limit, 10)) as typeof query;
@@ -75,6 +76,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: snapshots, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/portfolio/snapshots error:", error);
     return NextResponse.json(
       { error: "Failed to fetch snapshots", success: false },
@@ -88,6 +95,8 @@ export async function GET(request: NextRequest) {
 // If no body, create a snapshot from current portfolio state
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const now = new Date();
 
     // Check if body is provided (for historical snapshot import)
@@ -108,6 +117,7 @@ export async function POST(request: NextRequest) {
             totalDebt: body.totalDebt ?? 0,
             netWorth: body.netWorth ?? 0,
             details: body.details ?? { accounts: [], items: [] },
+            userId,
             createdAt: now,
           })
           .returning({ id: schema.portfolioSnapshots.id });
@@ -116,12 +126,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Otherwise, create snapshot from current portfolio state
-    const accounts = await db.select().from(schema.portfolioAccounts);
+    // Otherwise, create snapshot from current portfolio state for this user
+    const accounts = await db
+      .select()
+      .from(schema.portfolioAccounts)
+      .where(eq(schema.portfolioAccounts.userId, userId));
+
     const items = await db
       .select()
       .from(schema.portfolioItems)
-      .where(eq(schema.portfolioItems.isActive, true));
+      .where(
+        and(
+          eq(schema.portfolioItems.isActive, true),
+          eq(schema.portfolioItems.userId, userId)
+        )
+      );
 
     // Calculate totals by bucket
     let totalSavings = 0;
@@ -184,12 +203,19 @@ export async function POST(request: NextRequest) {
           accounts: accountDetails,
           items: itemDetails,
         },
+        userId,
         createdAt: now,
       })
       .returning({ id: schema.portfolioSnapshots.id });
 
     return NextResponse.json({ data: { id: result[0].id }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("POST /api/portfolio/snapshots error:", error);
     return NextResponse.json(
       { error: "Failed to create snapshot", success: false },

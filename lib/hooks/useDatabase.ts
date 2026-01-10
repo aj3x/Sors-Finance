@@ -44,9 +44,24 @@ export function invalidateCategories() {
 }
 
 export function invalidateTransactions() {
+  // Invalidate transaction queries
   mutate((key: string) => typeof key === "string" && key.startsWith("transactions"), undefined, {
     revalidate: true,
   });
+  // Also invalidate dashboard aggregations that depend on transactions
+  mutate((key: string) => typeof key === "string" && key.startsWith("totals"), undefined, {
+    revalidate: true,
+  });
+  mutate((key: string) => typeof key === "string" && key.startsWith("spending"), undefined, {
+    revalidate: true,
+  });
+  mutate((key: string) => typeof key === "string" && key.startsWith("trend"), undefined, {
+    revalidate: true,
+  });
+  mutate((key: string) => typeof key === "string" && key.startsWith("ytdSpending"), undefined, {
+    revalidate: true,
+  });
+  mutate("periods");
 }
 
 export function invalidateBudgets() {
@@ -83,6 +98,10 @@ export function useInitDatabase() {
     fetch("/api/settings")
       .then((res) => {
         if (res.ok) {
+          setIsReady(true);
+        } else if (res.status === 401) {
+          // User is not authenticated - this is fine, auth will handle redirect
+          // Mark as ready so we don't block rendering
           setIsReady(true);
         } else {
           throw new Error("API not ready");

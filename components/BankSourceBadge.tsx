@@ -1,6 +1,6 @@
 "use client";
 
-import Image from "next/image";
+/* eslint-disable @next/next/no-img-element */
 import { Building2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -43,12 +43,10 @@ export function BankSourceBadge({
 
   // For banks with logos, just show the logo without a container
   const content = logoPath ? (
-    <Image
+    <img
       src={logoPath}
       alt={`${source} logo`}
-      width={imageSizes[size].width}
-      height={imageSizes[size].height}
-      className={`${imageSizes[size].className} object-contain`}
+      className={`${imageSizes[size].className} w-auto object-contain`}
     />
   ) : (
     // For banks without logos, show a badge with icon and text

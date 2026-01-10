@@ -43,9 +43,9 @@ async function isSnapshotEnabled(): Promise<boolean> {
 }
 
 /**
- * Check if a snapshot already exists for today
+ * Check if a snapshot already exists for today for a specific user
  */
-async function hasSnapshotToday(): Promise<boolean> {
+async function hasSnapshotTodayForUser(userId: number): Promise<boolean> {
   const now = new Date();
   const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
@@ -55,6 +55,7 @@ async function hasSnapshotToday(): Promise<boolean> {
     .from(schema.portfolioSnapshots)
     .where(
       and(
+        eq(schema.portfolioSnapshots.userId, userId),
         gte(schema.portfolioSnapshots.date, startOfDay),
         lte(schema.portfolioSnapshots.date, endOfDay)
       )
@@ -65,17 +66,25 @@ async function hasSnapshotToday(): Promise<boolean> {
 }
 
 /**
- * Create a portfolio snapshot
+ * Create a portfolio snapshot for a specific user
  */
-async function createSnapshot(): Promise<number> {
+async function createSnapshotForUser(userId: number): Promise<number> {
   const now = new Date();
 
-  // Get all accounts and active items
-  const accounts = await db.select().from(schema.portfolioAccounts);
+  // Get accounts and active items for this specific user
+  const accounts = await db
+    .select()
+    .from(schema.portfolioAccounts)
+    .where(eq(schema.portfolioAccounts.userId, userId));
   const items = await db
     .select()
     .from(schema.portfolioItems)
-    .where(eq(schema.portfolioItems.isActive, true));
+    .where(
+      and(
+        eq(schema.portfolioItems.userId, userId),
+        eq(schema.portfolioItems.isActive, true)
+      )
+    );
 
   // Calculate totals
   let totalSavings = 0;
@@ -138,6 +147,7 @@ async function createSnapshot(): Promise<number> {
         accounts: accountDetails,
         items: itemDetails,
       },
+      userId,
       createdAt: now,
     })
     .returning({ id: schema.portfolioSnapshots.id });
@@ -146,10 +156,10 @@ async function createSnapshot(): Promise<number> {
 }
 
 /**
- * Run the scheduled snapshot task
+ * Run the scheduled snapshot task for all users
  */
 async function runSnapshotTask() {
-  console.log("[Scheduler] Running scheduled portfolio snapshot...");
+  console.log("[Scheduler] Running scheduled portfolio snapshots for all users...");
 
   try {
     // Check if enabled
@@ -159,18 +169,38 @@ async function runSnapshotTask() {
       return;
     }
 
-    // Check if already exists today
-    const exists = await hasSnapshotToday();
-    if (exists) {
-      console.log("[Scheduler] Snapshot already exists for today, skipping.");
+    // Get all users
+    const allUsers = await db.select().from(schema.users);
+
+    if (allUsers.length === 0) {
+      console.log("[Scheduler] No users found, skipping.");
       return;
     }
 
-    // Create snapshot
-    const snapshotId = await createSnapshot();
-    console.log(`[Scheduler] Created snapshot #${snapshotId}`);
+    console.log(`[Scheduler] Processing ${allUsers.length} user(s)...`);
+
+    // Create snapshot for each user
+    for (const user of allUsers) {
+      try {
+        // Check if snapshot already exists today for this user
+        const exists = await hasSnapshotTodayForUser(user.id);
+        if (exists) {
+          console.log(`[Scheduler] Snapshot already exists for user #${user.id} (${user.username}), skipping.`);
+          continue;
+        }
+
+        // Create snapshot for this user
+        const snapshotId = await createSnapshotForUser(user.id);
+        console.log(`[Scheduler] Created snapshot #${snapshotId} for user #${user.id} (${user.username})`);
+      } catch (userError) {
+        console.error(`[Scheduler] Failed to create snapshot for user #${user.id}:`, userError);
+        // Continue with other users even if one fails
+      }
+    }
+
+    console.log("[Scheduler] Completed snapshot creation for all users.");
   } catch (error) {
-    console.error("[Scheduler] Failed to create snapshot:", error);
+    console.error("[Scheduler] Failed to run snapshot task:", error);
   }
 }
 
@@ -240,23 +270,67 @@ export function stopScheduler() {
 }
 
 /**
- * Manually trigger a snapshot (for testing or manual runs)
+ * Manually trigger a snapshot for a specific user
+ * @param userId - The user ID to create a snapshot for
+ * @returns The snapshot ID if created, null if already exists
  */
-export async function triggerSnapshot(): Promise<number | null> {
-  console.log("[Scheduler] Manually triggering snapshot...");
+export async function triggerSnapshot(userId: number): Promise<number | null> {
+  console.log(`[Scheduler] Manually triggering snapshot for user #${userId}...`);
 
   try {
-    const exists = await hasSnapshotToday();
+    const exists = await hasSnapshotTodayForUser(userId);
     if (exists) {
-      console.log("[Scheduler] Snapshot already exists for today.");
+      console.log(`[Scheduler] Snapshot already exists for user #${userId} today.`);
       return null;
     }
 
-    const snapshotId = await createSnapshot();
-    console.log(`[Scheduler] Created snapshot #${snapshotId}`);
+    const snapshotId = await createSnapshotForUser(userId);
+    console.log(`[Scheduler] Created snapshot #${snapshotId} for user #${userId}`);
     return snapshotId;
   } catch (error) {
-    console.error("[Scheduler] Failed to create snapshot:", error);
+    console.error(`[Scheduler] Failed to create snapshot for user #${userId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Manually trigger snapshots for all users
+ * @returns Array of snapshot IDs created (excludes users who already had snapshots)
+ */
+export async function triggerSnapshotForAllUsers(): Promise<number[]> {
+  console.log("[Scheduler] Manually triggering snapshots for all users...");
+
+  const createdSnapshots: number[] = [];
+
+  try {
+    const allUsers = await db.select().from(schema.users);
+
+    if (allUsers.length === 0) {
+      console.log("[Scheduler] No users found.");
+      return createdSnapshots;
+    }
+
+    for (const user of allUsers) {
+      try {
+        const exists = await hasSnapshotTodayForUser(user.id);
+        if (exists) {
+          console.log(`[Scheduler] Snapshot already exists for user #${user.id} (${user.username}), skipping.`);
+          continue;
+        }
+
+        const snapshotId = await createSnapshotForUser(user.id);
+        console.log(`[Scheduler] Created snapshot #${snapshotId} for user #${user.id} (${user.username})`);
+        createdSnapshots.push(snapshotId);
+      } catch (userError) {
+        console.error(`[Scheduler] Failed to create snapshot for user #${user.id}:`, userError);
+        // Continue with other users even if one fails
+      }
+    }
+
+    console.log(`[Scheduler] Completed. Created ${createdSnapshots.length} snapshot(s).`);
+    return createdSnapshots;
+  } catch (error) {
+    console.error("[Scheduler] Failed to trigger snapshots:", error);
     throw error;
   }
 }

@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // DELETE /api/budgets/[id]
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const budgetId = parseInt(id, 10);
 
@@ -17,11 +20,16 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Check if budget exists
+    // Check if budget exists and belongs to user
     const existing = await db
       .select()
       .from(schema.budgets)
-      .where(eq(schema.budgets.id, budgetId))
+      .where(
+        and(
+          eq(schema.budgets.id, budgetId),
+          eq(schema.budgets.userId, userId)
+        )
+      )
       .limit(1);
 
     if (existing.length === 0) {
@@ -31,10 +39,23 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    await db.delete(schema.budgets).where(eq(schema.budgets.id, budgetId));
+    await db
+      .delete(schema.budgets)
+      .where(
+        and(
+          eq(schema.budgets.id, budgetId),
+          eq(schema.budgets.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { deleted: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("DELETE /api/budgets/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to delete budget", success: false },

@@ -2,15 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { eq, and, asc, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // GET /api/portfolio/items?accountId=1&includeInactive=false
 export async function GET(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const accountId = request.nextUrl.searchParams.get("accountId");
     const includeInactive = request.nextUrl.searchParams.get("includeInactive") === "true";
     const tickerMode = request.nextUrl.searchParams.get("tickerMode") === "true";
 
-    const conditions = [];
+    const conditions = [eq(schema.portfolioItems.userId, userId)];
 
     if (accountId) {
       conditions.push(eq(schema.portfolioItems.accountId, parseInt(accountId, 10)));
@@ -24,19 +27,11 @@ export async function GET(request: NextRequest) {
       conditions.push(eq(schema.portfolioItems.priceMode, "ticker"));
     }
 
-    let results;
-    if (conditions.length > 0) {
-      results = await db
-        .select()
-        .from(schema.portfolioItems)
-        .where(and(...conditions))
-        .orderBy(asc(schema.portfolioItems.order));
-    } else {
-      results = await db
-        .select()
-        .from(schema.portfolioItems)
-        .orderBy(asc(schema.portfolioItems.order));
-    }
+    const results = await db
+      .select()
+      .from(schema.portfolioItems)
+      .where(and(...conditions))
+      .orderBy(asc(schema.portfolioItems.order));
 
     const items = results.map((row) => ({
       id: row.id,
@@ -60,6 +55,12 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ data: items, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/portfolio/items error:", error);
     return NextResponse.json(
       { error: "Failed to fetch portfolio items", success: false },
@@ -71,6 +72,8 @@ export async function GET(request: NextRequest) {
 // POST /api/portfolio/items
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const body = await request.json();
 
     if (!body.accountId || !body.name) {
@@ -80,11 +83,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get max order for this account
+    // Get max order for this account and user
     const maxOrderResult = await db
       .select({ maxOrder: sql<number>`MAX(${schema.portfolioItems.order})` })
       .from(schema.portfolioItems)
-      .where(eq(schema.portfolioItems.accountId, body.accountId));
+      .where(
+        and(
+          eq(schema.portfolioItems.accountId, body.accountId),
+          eq(schema.portfolioItems.userId, userId)
+        )
+      );
 
     const order = (maxOrderResult[0]?.maxOrder ?? -1) + 1;
     const now = new Date();
@@ -109,6 +117,7 @@ export async function POST(request: NextRequest) {
         lastPriceUpdate: body.lastPriceUpdate ? new Date(body.lastPriceUpdate) : null,
         priceMode,
         isInternational: body.isInternational || null,
+        userId,
         createdAt: now,
         updatedAt: now,
       })
@@ -116,6 +125,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ data: { id: result[0].id }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("POST /api/portfolio/items error:", error);
     return NextResponse.json(
       { error: "Failed to create portfolio item", success: false },

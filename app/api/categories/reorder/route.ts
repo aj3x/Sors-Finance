@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // POST /api/categories/reorder
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { activeId, overId } = await request.json();
 
     if (!activeId || !overId) {
@@ -14,10 +17,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get all categories ordered
+    // Get all categories ordered for this user
     const categories = await db
       .select()
       .from(schema.categories)
+      .where(eq(schema.categories.userId, userId))
       .orderBy(asc(schema.categories.order));
 
     // Find indices
@@ -41,11 +45,22 @@ export async function POST(request: NextRequest) {
       await db
         .update(schema.categories)
         .set({ order: i, updatedAt: now })
-        .where(eq(schema.categories.id, categories[i].id));
+        .where(
+          and(
+            eq(schema.categories.id, categories[i].id),
+            eq(schema.categories.userId, userId)
+          )
+        );
     }
 
     return NextResponse.json({ data: { reordered: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("POST /api/categories/reorder error:", error);
     return NextResponse.json(
       { error: "Failed to reorder categories", success: false },

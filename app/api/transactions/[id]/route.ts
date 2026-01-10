@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/transactions/[id]
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const transactionId = parseInt(id, 10);
 
@@ -20,7 +23,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const result = await db
       .select()
       .from(schema.transactions)
-      .where(eq(schema.transactions.id, transactionId))
+      .where(
+        and(
+          eq(schema.transactions.id, transactionId),
+          eq(schema.transactions.userId, userId)
+        )
+      )
       .limit(1);
 
     if (result.length === 0) {
@@ -32,6 +40,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ data: result[0], success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/transactions/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to fetch transaction", success: false },
@@ -43,6 +57,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 // PUT /api/transactions/[id]
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const transactionId = parseInt(id, 10);
 
@@ -56,11 +72,16 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     const updates = await request.json();
     const now = new Date();
 
-    // Check if transaction exists
+    // Check if transaction exists and belongs to user
     const existing = await db
       .select()
       .from(schema.transactions)
-      .where(eq(schema.transactions.id, transactionId))
+      .where(
+        and(
+          eq(schema.transactions.id, transactionId),
+          eq(schema.transactions.userId, userId)
+        )
+      )
       .limit(1);
 
     if (existing.length === 0) {
@@ -85,10 +106,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     await db
       .update(schema.transactions)
       .set(updateValues)
-      .where(eq(schema.transactions.id, transactionId));
+      .where(
+        and(
+          eq(schema.transactions.id, transactionId),
+          eq(schema.transactions.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { updated: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("PUT /api/transactions/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update transaction", success: false },
@@ -100,6 +132,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 // DELETE /api/transactions/[id]
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const transactionId = parseInt(id, 10);
 
@@ -110,11 +144,16 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Check if transaction exists
+    // Check if transaction exists and belongs to user
     const existing = await db
       .select()
       .from(schema.transactions)
-      .where(eq(schema.transactions.id, transactionId))
+      .where(
+        and(
+          eq(schema.transactions.id, transactionId),
+          eq(schema.transactions.userId, userId)
+        )
+      )
       .limit(1);
 
     if (existing.length === 0) {
@@ -124,10 +163,23 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    await db.delete(schema.transactions).where(eq(schema.transactions.id, transactionId));
+    await db
+      .delete(schema.transactions)
+      .where(
+        and(
+          eq(schema.transactions.id, transactionId),
+          eq(schema.transactions.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { deleted: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("DELETE /api/transactions/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to delete transaction", success: false },

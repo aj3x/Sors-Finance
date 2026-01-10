@@ -1,22 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { eq, desc, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // GET /api/portfolio/summary?type=netWorth|buckets|change|accountTotal
 export async function GET(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const type = request.nextUrl.searchParams.get("type") || "netWorth";
     const accountId = request.nextUrl.searchParams.get("accountId");
     const bucket = request.nextUrl.searchParams.get("bucket");
 
     switch (type) {
       case "netWorth": {
-        // Get all active items
-        const accounts = await db.select().from(schema.portfolioAccounts);
+        // Get all active items for this user
+        const accounts = await db
+          .select()
+          .from(schema.portfolioAccounts)
+          .where(eq(schema.portfolioAccounts.userId, userId));
+
         const items = await db
           .select()
           .from(schema.portfolioItems)
-          .where(eq(schema.portfolioItems.isActive, true));
+          .where(
+            and(
+              eq(schema.portfolioItems.isActive, true),
+              eq(schema.portfolioItems.userId, userId)
+            )
+          );
 
         let totalSavings = 0;
         let totalInvestments = 0;
@@ -58,12 +70,21 @@ export async function GET(request: NextRequest) {
       }
 
       case "buckets": {
-        // Get bucket breakdown
-        const accounts = await db.select().from(schema.portfolioAccounts);
+        // Get bucket breakdown for this user
+        const accounts = await db
+          .select()
+          .from(schema.portfolioAccounts)
+          .where(eq(schema.portfolioAccounts.userId, userId));
+
         const items = await db
           .select()
           .from(schema.portfolioItems)
-          .where(eq(schema.portfolioItems.isActive, true));
+          .where(
+            and(
+              eq(schema.portfolioItems.isActive, true),
+              eq(schema.portfolioItems.userId, userId)
+            )
+          );
 
         const buckets: Record<string, number> = {
           Savings: 0,
@@ -92,7 +113,12 @@ export async function GET(request: NextRequest) {
         const accounts = await db
           .select()
           .from(schema.portfolioAccounts)
-          .where(eq(schema.portfolioAccounts.bucket, bucket));
+          .where(
+            and(
+              eq(schema.portfolioAccounts.bucket, bucket),
+              eq(schema.portfolioAccounts.userId, userId)
+            )
+          );
 
         const accountIds = accounts.map((a) => a.id);
 
@@ -101,14 +127,15 @@ export async function GET(request: NextRequest) {
         }
 
         let total = 0;
-        for (const accountId of accountIds) {
+        for (const accId of accountIds) {
           const items = await db
             .select()
             .from(schema.portfolioItems)
             .where(
               and(
-                eq(schema.portfolioItems.accountId, accountId),
-                eq(schema.portfolioItems.isActive, true)
+                eq(schema.portfolioItems.accountId, accId),
+                eq(schema.portfolioItems.isActive, true),
+                eq(schema.portfolioItems.userId, userId)
               )
             );
           total += items.reduce((sum, i) => sum + i.currentValue, 0);
@@ -131,7 +158,8 @@ export async function GET(request: NextRequest) {
           .where(
             and(
               eq(schema.portfolioItems.accountId, parseInt(accountId, 10)),
-              eq(schema.portfolioItems.isActive, true)
+              eq(schema.portfolioItems.isActive, true),
+              eq(schema.portfolioItems.userId, userId)
             )
           );
 
@@ -141,12 +169,21 @@ export async function GET(request: NextRequest) {
       }
 
       case "change": {
-        // Get current net worth
-        const accounts = await db.select().from(schema.portfolioAccounts);
+        // Get current net worth for this user
+        const accounts = await db
+          .select()
+          .from(schema.portfolioAccounts)
+          .where(eq(schema.portfolioAccounts.userId, userId));
+
         const items = await db
           .select()
           .from(schema.portfolioItems)
-          .where(eq(schema.portfolioItems.isActive, true));
+          .where(
+            and(
+              eq(schema.portfolioItems.isActive, true),
+              eq(schema.portfolioItems.userId, userId)
+            )
+          );
 
         let currentNetWorth = 0;
         for (const account of accounts) {
@@ -160,10 +197,11 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        // Get most recent snapshot
+        // Get most recent snapshot for this user
         const snapshots = await db
           .select()
           .from(schema.portfolioSnapshots)
+          .where(eq(schema.portfolioSnapshots.userId, userId))
           .orderBy(desc(schema.portfolioSnapshots.date))
           .limit(2);
 
@@ -202,6 +240,12 @@ export async function GET(request: NextRequest) {
         );
     }
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/portfolio/summary error:", error);
     return NextResponse.json(
       { error: "Failed to fetch summary", success: false },

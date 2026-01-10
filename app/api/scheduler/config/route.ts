@@ -1,23 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 const SNAPSHOT_TIME_KEY = "SNAPSHOT_TIME";
 const SNAPSHOT_ENABLED_KEY = "SNAPSHOT_ENABLED";
 
 // GET /api/scheduler/config
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const timeResult = await db
       .select()
       .from(schema.settings)
-      .where(eq(schema.settings.key, SNAPSHOT_TIME_KEY))
+      .where(
+        and(
+          eq(schema.settings.key, SNAPSHOT_TIME_KEY),
+          eq(schema.settings.userId, userId)
+        )
+      )
       .limit(1);
 
     const enabledResult = await db
       .select()
       .from(schema.settings)
-      .where(eq(schema.settings.key, SNAPSHOT_ENABLED_KEY))
+      .where(
+        and(
+          eq(schema.settings.key, SNAPSHOT_ENABLED_KEY),
+          eq(schema.settings.userId, userId)
+        )
+      )
       .limit(1);
 
     return NextResponse.json({
@@ -28,6 +41,12 @@ export async function GET() {
       success: true,
     });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/scheduler/config error:", error);
     return NextResponse.json(
       { error: "Failed to fetch scheduler config", success: false },
@@ -39,6 +58,8 @@ export async function GET() {
 // PUT /api/scheduler/config
 export async function PUT(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { time, enabled } = await request.json();
 
     // Update time if provided
@@ -55,18 +76,29 @@ export async function PUT(request: NextRequest) {
       const existing = await db
         .select()
         .from(schema.settings)
-        .where(eq(schema.settings.key, SNAPSHOT_TIME_KEY))
+        .where(
+          and(
+            eq(schema.settings.key, SNAPSHOT_TIME_KEY),
+            eq(schema.settings.userId, userId)
+          )
+        )
         .limit(1);
 
       if (existing.length > 0) {
         await db
           .update(schema.settings)
           .set({ value: time })
-          .where(eq(schema.settings.key, SNAPSHOT_TIME_KEY));
+          .where(
+            and(
+              eq(schema.settings.key, SNAPSHOT_TIME_KEY),
+              eq(schema.settings.userId, userId)
+            )
+          );
       } else {
         await db.insert(schema.settings).values({
           key: SNAPSHOT_TIME_KEY,
           value: time,
+          userId,
         });
       }
     }
@@ -76,24 +108,41 @@ export async function PUT(request: NextRequest) {
       const existing = await db
         .select()
         .from(schema.settings)
-        .where(eq(schema.settings.key, SNAPSHOT_ENABLED_KEY))
+        .where(
+          and(
+            eq(schema.settings.key, SNAPSHOT_ENABLED_KEY),
+            eq(schema.settings.userId, userId)
+          )
+        )
         .limit(1);
 
       if (existing.length > 0) {
         await db
           .update(schema.settings)
           .set({ value: String(enabled) })
-          .where(eq(schema.settings.key, SNAPSHOT_ENABLED_KEY));
+          .where(
+            and(
+              eq(schema.settings.key, SNAPSHOT_ENABLED_KEY),
+              eq(schema.settings.userId, userId)
+            )
+          );
       } else {
         await db.insert(schema.settings).values({
           key: SNAPSHOT_ENABLED_KEY,
           value: String(enabled),
+          userId,
         });
       }
     }
 
     return NextResponse.json({ data: { updated: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("PUT /api/scheduler/config error:", error);
     return NextResponse.json(
       { error: "Failed to update scheduler config", success: false },

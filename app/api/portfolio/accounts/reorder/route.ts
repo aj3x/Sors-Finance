@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // POST /api/portfolio/accounts/reorder
 export async function POST(request: NextRequest) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { bucket, activeId, overId } = await request.json();
 
     if (!bucket || !activeId || !overId) {
@@ -14,11 +17,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get all accounts for this bucket
+    // Get all accounts for this bucket and user
     const accounts = await db
       .select()
       .from(schema.portfolioAccounts)
-      .where(eq(schema.portfolioAccounts.bucket, bucket))
+      .where(
+        and(
+          eq(schema.portfolioAccounts.bucket, bucket),
+          eq(schema.portfolioAccounts.userId, userId)
+        )
+      )
       .orderBy(asc(schema.portfolioAccounts.order));
 
     // Find indices
@@ -42,11 +50,22 @@ export async function POST(request: NextRequest) {
       await db
         .update(schema.portfolioAccounts)
         .set({ order: i, updatedAt: now })
-        .where(eq(schema.portfolioAccounts.id, accounts[i].id));
+        .where(
+          and(
+            eq(schema.portfolioAccounts.id, accounts[i].id),
+            eq(schema.portfolioAccounts.userId, userId)
+          )
+        );
     }
 
     return NextResponse.json({ data: { reordered: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("POST /api/portfolio/accounts/reorder error:", error);
     return NextResponse.json(
       { error: "Failed to reorder accounts", success: false },

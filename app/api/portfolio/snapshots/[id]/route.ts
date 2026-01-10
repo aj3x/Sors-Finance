@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
+import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
 // GET /api/portfolio/snapshots/[id]
 export async function GET(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const snapshotId = parseInt(id, 10);
 
@@ -20,7 +23,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
     const result = await db
       .select()
       .from(schema.portfolioSnapshots)
-      .where(eq(schema.portfolioSnapshots.id, snapshotId))
+      .where(
+        and(
+          eq(schema.portfolioSnapshots.id, snapshotId),
+          eq(schema.portfolioSnapshots.userId, userId)
+        )
+      )
       .limit(1);
 
     if (result.length === 0) {
@@ -32,6 +40,12 @@ export async function GET(request: NextRequest, context: RouteContext) {
 
     return NextResponse.json({ data: result[0], success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("GET /api/portfolio/snapshots/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to fetch snapshot", success: false },
@@ -43,6 +57,8 @@ export async function GET(request: NextRequest, context: RouteContext) {
 // PUT /api/portfolio/snapshots/[id]
 export async function PUT(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const snapshotId = parseInt(id, 10);
 
@@ -67,7 +83,12 @@ export async function PUT(request: NextRequest, context: RouteContext) {
       const existing = await db
         .select()
         .from(schema.portfolioSnapshots)
-        .where(eq(schema.portfolioSnapshots.id, snapshotId))
+        .where(
+          and(
+            eq(schema.portfolioSnapshots.id, snapshotId),
+            eq(schema.portfolioSnapshots.userId, userId)
+          )
+        )
         .limit(1);
 
       if (existing.length === 0) {
@@ -89,10 +110,21 @@ export async function PUT(request: NextRequest, context: RouteContext) {
     await db
       .update(schema.portfolioSnapshots)
       .set(updateValues)
-      .where(eq(schema.portfolioSnapshots.id, snapshotId));
+      .where(
+        and(
+          eq(schema.portfolioSnapshots.id, snapshotId),
+          eq(schema.portfolioSnapshots.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { updated: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("PUT /api/portfolio/snapshots/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to update snapshot", success: false },
@@ -104,6 +136,8 @@ export async function PUT(request: NextRequest, context: RouteContext) {
 // DELETE /api/portfolio/snapshots/[id]
 export async function DELETE(request: NextRequest, context: RouteContext) {
   try {
+    const { userId } = await requireAuth(request);
+
     const { id } = await context.params;
     const snapshotId = parseInt(id, 10);
 
@@ -114,12 +148,42 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
+    // Check if snapshot exists and belongs to user
+    const existing = await db
+      .select()
+      .from(schema.portfolioSnapshots)
+      .where(
+        and(
+          eq(schema.portfolioSnapshots.id, snapshotId),
+          eq(schema.portfolioSnapshots.userId, userId)
+        )
+      )
+      .limit(1);
+
+    if (existing.length === 0) {
+      return NextResponse.json(
+        { error: "Snapshot not found", success: false },
+        { status: 404 }
+      );
+    }
+
     await db
       .delete(schema.portfolioSnapshots)
-      .where(eq(schema.portfolioSnapshots.id, snapshotId));
+      .where(
+        and(
+          eq(schema.portfolioSnapshots.id, snapshotId),
+          eq(schema.portfolioSnapshots.userId, userId)
+        )
+      );
 
     return NextResponse.json({ data: { deleted: true }, success: true });
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.message, success: false },
+        { status: error.statusCode }
+      );
+    }
     console.error("DELETE /api/portfolio/snapshots/[id] error:", error);
     return NextResponse.json(
       { error: "Failed to delete snapshot", success: false },

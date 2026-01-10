@@ -7,6 +7,44 @@
 import { sqliteTable, text, integer, real, index } from "drizzle-orm/sqlite-core";
 
 // ============================================
+// Users Table
+// ============================================
+
+export const users = sqliteTable(
+  "users",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    uuid: text("uuid").notNull().unique(),
+    username: text("username").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [index("users_username_idx").on(table.username)]
+);
+
+// ============================================
+// Sessions Table
+// ============================================
+
+export const sessions = sqliteTable(
+  "sessions",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    token: text("token").notNull().unique(),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    expiresAt: integer("expires_at", { mode: "timestamp" }).notNull(),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
+  },
+  (table) => [
+    index("sessions_token_idx").on(table.token),
+    index("sessions_user_idx").on(table.userId),
+  ]
+);
+
+// ============================================
 // Categories Table
 // ============================================
 
@@ -19,12 +57,14 @@ export const categories = sqliteTable(
     keywords: text("keywords", { mode: "json" }).$type<string[]>().notNull().default([]),
     order: integer("order").notNull().default(0),
     isSystem: integer("is_system", { mode: "boolean" }).default(false),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   },
   (table) => [
     index("categories_order_idx").on(table.order),
     index("categories_name_idx").on(table.name),
+    index("categories_user_idx").on(table.userId),
   ]
 );
 
@@ -46,6 +86,7 @@ export const transactions = sqliteTable(
     source: text("source").notNull(),
     categoryId: integer("category_id").references(() => categories.id, { onDelete: "set null" }),
     importId: integer("import_id").references(() => imports.id, { onDelete: "set null" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   },
@@ -55,6 +96,7 @@ export const transactions = sqliteTable(
     index("transactions_source_idx").on(table.source),
     index("transactions_import_idx").on(table.importId),
     index("transactions_date_category_idx").on(table.date, table.categoryId),
+    index("transactions_user_idx").on(table.userId),
   ]
 );
 
@@ -72,12 +114,14 @@ export const budgets = sqliteTable(
     year: integer("year").notNull(),
     month: integer("month"), // null for yearly budgets
     amount: real("amount").notNull(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   },
   (table) => [
     index("budgets_year_month_idx").on(table.year, table.month),
     index("budgets_year_month_category_idx").on(table.year, table.month, table.categoryId),
+    index("budgets_user_idx").on(table.userId),
   ]
 );
 
@@ -93,20 +137,32 @@ export const imports = sqliteTable(
     source: text("source").notNull(),
     transactionCount: integer("transaction_count").notNull(),
     totalAmount: real("total_amount").notNull(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
     importedAt: integer("imported_at", { mode: "timestamp" }).notNull(),
   },
-  (table) => [index("imports_source_idx").on(table.source)]
+  (table) => [
+    index("imports_source_idx").on(table.source),
+    index("imports_user_idx").on(table.userId),
+  ]
 );
 
 // ============================================
 // Settings Table
 // ============================================
 
-export const settings = sqliteTable("settings", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
-  key: text("key").notNull().unique(),
-  value: text("value").notNull(),
-});
+export const settings = sqliteTable(
+  "settings",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    index("settings_user_idx").on(table.userId),
+    index("settings_user_key_idx").on(table.userId, table.key),
+  ]
+);
 
 // ============================================
 // Portfolio Accounts Table
@@ -120,12 +176,14 @@ export const portfolioAccounts = sqliteTable(
     bucket: text("bucket").notNull(), // 'Savings' | 'Investments' | 'Assets' | 'Debt'
     name: text("name").notNull(),
     order: integer("order").notNull().default(0),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   },
   (table) => [
     index("portfolio_accounts_bucket_idx").on(table.bucket),
     index("portfolio_accounts_order_idx").on(table.order),
+    index("portfolio_accounts_user_idx").on(table.userId),
   ]
 );
 
@@ -153,6 +211,7 @@ export const portfolioItems = sqliteTable(
     lastPriceUpdate: integer("last_price_update", { mode: "timestamp" }),
     priceMode: text("price_mode"), // 'manual' | 'ticker'
     isInternational: integer("is_international", { mode: "boolean" }),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull(),
   },
@@ -160,6 +219,7 @@ export const portfolioItems = sqliteTable(
     index("portfolio_items_account_idx").on(table.accountId),
     index("portfolio_items_active_idx").on(table.isActive),
     index("portfolio_items_order_idx").on(table.order),
+    index("portfolio_items_user_idx").on(table.userId),
   ]
 );
 
@@ -184,9 +244,13 @@ export const portfolioSnapshots = sqliteTable(
     totalDebt: real("total_debt").notNull().default(0),
     netWorth: real("net_worth").notNull().default(0),
     details: text("details", { mode: "json" }).$type<SnapshotDetails>().notNull(),
+    userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull(),
   },
-  (table) => [index("portfolio_snapshots_date_idx").on(table.date)]
+  (table) => [
+    index("portfolio_snapshots_date_idx").on(table.date),
+    index("portfolio_snapshots_user_idx").on(table.userId),
+  ]
 );
 
 // ============================================
@@ -216,3 +280,8 @@ export type PortfolioItemInsert = typeof portfolioItems.$inferInsert;
 
 export type PortfolioSnapshotRow = typeof portfolioSnapshots.$inferSelect;
 export type PortfolioSnapshotInsert = typeof portfolioSnapshots.$inferInsert;
+
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
+
+export type Session = typeof sessions.$inferSelect;
