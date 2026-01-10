@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
-import { eq, ne, and } from "drizzle-orm";
+import { eq, ne, and, isNull, or } from "drizzle-orm";
 import { requireAuth, AuthError } from "@/lib/auth/api-helper";
 
 // POST /api/transactions/recategorize
@@ -22,34 +22,39 @@ export async function POST(request: NextRequest) {
     const excludedCat = categories.find((c) => c.name === "Excluded");
     const uncategorizedCat = categories.find((c) => c.name === "Uncategorized");
 
-    if (!uncategorizedCat) {
-      return NextResponse.json(
-        { error: "Uncategorized category not found", success: false },
-        { status: 500 }
-      );
-    }
-
     // Get transactions to recategorize for this user
     let transactions;
     if (mode === "uncategorized") {
+      // Uncategorized transactions have categoryId = null OR categoryId = uncategorizedCat.id
+      const uncategorizedCondition = uncategorizedCat
+        ? or(
+            isNull(schema.transactions.categoryId),
+            eq(schema.transactions.categoryId, uncategorizedCat.id)
+          )
+        : isNull(schema.transactions.categoryId);
+
       transactions = await db
         .select()
         .from(schema.transactions)
         .where(
           and(
-            eq(schema.transactions.categoryId, uncategorizedCat.id),
+            uncategorizedCondition,
             eq(schema.transactions.userId, userId)
           )
         );
     } else {
       // mode === "all" - get all non-excluded transactions for this user
       if (excludedCat) {
+        // Need to handle null categoryId separately since ne() doesn't match null
         transactions = await db
           .select()
           .from(schema.transactions)
           .where(
             and(
-              ne(schema.transactions.categoryId, excludedCat.id),
+              or(
+                isNull(schema.transactions.categoryId),
+                ne(schema.transactions.categoryId, excludedCat.id)
+              ),
               eq(schema.transactions.userId, userId)
             )
           );

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db, schema } from "@/lib/db/connection";
 import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
+import { eq, and, ne } from "drizzle-orm";
 import { requireAuth, AuthError } from "@/lib/auth/api-helper";
+import { seedDefaultCategoriesForUser } from "@/lib/db/seed";
 
 // GET /api/data - Export all data for the authenticated user
 export async function GET(request: NextRequest) {
@@ -77,7 +78,13 @@ export async function DELETE(request: NextRequest) {
     await db.delete(schema.imports).where(eq(schema.imports.userId, userId));
 
     if (!keepCategories) {
-      await db.delete(schema.categories).where(eq(schema.categories.userId, userId));
+      // Only delete non-system categories - preserve system categories (Uncategorized, Excluded, Income)
+      await db.delete(schema.categories).where(
+        and(
+          eq(schema.categories.userId, userId),
+          ne(schema.categories.isSystem, true)
+        )
+      );
       await db.delete(schema.settings).where(eq(schema.settings.userId, userId));
     }
 
@@ -115,20 +122,47 @@ export async function POST(request: NextRequest) {
     await db.delete(schema.budgets).where(eq(schema.budgets.userId, userId));
     await db.delete(schema.transactions).where(eq(schema.transactions.userId, userId));
     await db.delete(schema.imports).where(eq(schema.imports.userId, userId));
-    await db.delete(schema.categories).where(eq(schema.categories.userId, userId));
+    // Only delete non-system categories - preserve system categories
+    await db.delete(schema.categories).where(
+      and(
+        eq(schema.categories.userId, userId),
+        ne(schema.categories.isSystem, true)
+      )
+    );
     await db.delete(schema.settings).where(eq(schema.settings.userId, userId));
+
+    // Get existing system categories for ID mapping
+    const existingSystemCategories = await db
+      .select()
+      .from(schema.categories)
+      .where(
+        and(
+          eq(schema.categories.userId, userId),
+          eq(schema.categories.isSystem, true)
+        )
+      );
 
     // Import categories first (for foreign key references)
     const categoryIdMap = new Map<number, number>();
     if (body.categories?.length) {
       for (const cat of body.categories) {
         const oldId = cat.id;
+
+        // For system categories, map to existing ones by name
+        if (cat.isSystem) {
+          const existingSysCat = existingSystemCategories.find(c => c.name === cat.name);
+          if (existingSysCat && oldId) {
+            categoryIdMap.set(oldId, existingSysCat.id);
+          }
+          continue; // Don't re-import system categories
+        }
+
         const result = await db.insert(schema.categories).values({
-          uuid: cat.uuid || randomUUID(),
+          uuid: randomUUID(), // Always generate new UUID to avoid conflicts
           name: cat.name,
           keywords: cat.keywords || [],
           order: cat.order ?? 0,
-          isSystem: cat.isSystem ?? false,
+          isSystem: false,
           userId,
           createdAt: cat.createdAt ? new Date(cat.createdAt) : now,
           updatedAt: cat.updatedAt ? new Date(cat.updatedAt) : now,
@@ -138,6 +172,9 @@ export async function POST(request: NextRequest) {
         }
       }
     }
+
+    // Ensure system categories exist (in case backup didn't have them)
+    await seedDefaultCategoriesForUser(userId);
 
     // Import imports
     const importIdMap = new Map<number, number>();
@@ -162,7 +199,7 @@ export async function POST(request: NextRequest) {
     if (body.transactions?.length) {
       for (const t of body.transactions) {
         await db.insert(schema.transactions).values({
-          uuid: t.uuid || randomUUID(),
+          uuid: randomUUID(), // Always generate new UUID to avoid conflicts
           date: new Date(t.date),
           description: t.description,
           matchField: t.matchField || t.description,
@@ -216,7 +253,7 @@ export async function POST(request: NextRequest) {
       for (const acc of body.portfolioAccounts) {
         const oldId = acc.id;
         const result = await db.insert(schema.portfolioAccounts).values({
-          uuid: acc.uuid || randomUUID(),
+          uuid: randomUUID(), // Always generate new UUID to avoid conflicts
           bucket: acc.bucket,
           name: acc.name,
           order: acc.order ?? 0,
@@ -236,7 +273,7 @@ export async function POST(request: NextRequest) {
         const newAccountId = item.accountId ? accountIdMap.get(item.accountId) : null;
         if (newAccountId) {
           await db.insert(schema.portfolioItems).values({
-            uuid: item.uuid || randomUUID(),
+            uuid: randomUUID(), // Always generate new UUID to avoid conflicts
             accountId: newAccountId,
             name: item.name,
             currentValue: item.currentValue ?? 0,
@@ -262,7 +299,7 @@ export async function POST(request: NextRequest) {
     if (body.portfolioSnapshots?.length) {
       for (const snap of body.portfolioSnapshots) {
         await db.insert(schema.portfolioSnapshots).values({
-          uuid: snap.uuid || randomUUID(),
+          uuid: randomUUID(), // Always generate new UUID to avoid conflicts
           date: new Date(snap.date),
           totalSavings: snap.totalSavings ?? 0,
           totalInvestments: snap.totalInvestments ?? 0,
