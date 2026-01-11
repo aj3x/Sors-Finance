@@ -13,7 +13,7 @@ A privacy-focused, self-hosted personal finance app for budget tracking, transac
 - **Portfolio Tracking** — Monitor stocks and crypto with optional price lookups
 - **Automatic Snapshots** — Daily portfolio snapshots at a configurable time
 - **Privacy Mode** — Hide sensitive amounts with a single click
-- **Data Export** — Export all your data anytime
+- **Data Export** — Export and Import all your data anytime
 
 ## Privacy First
 
