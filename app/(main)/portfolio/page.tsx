@@ -14,8 +14,6 @@ import {
   Pencil,
 } from "lucide-react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -63,6 +61,7 @@ import { usePrivacy } from "@/lib/privacy-context";
 import { useSetPageHeader } from "@/lib/page-header-context";
 import { useSnapshot } from "@/lib/snapshot-context";
 import { BucketCard, EditSnapshotDialog } from "@/components/portfolio";
+import { PlaidSyncButton } from "@/components/plaid/PlaidSyncButton";
 import { toast } from "sonner";
 
 const BUCKET_COLORS: Record<string, string> = {
@@ -135,9 +134,9 @@ export default function PortfolioPage() {
   const [editingSnapshot, setEditingSnapshot] = useState<DbPortfolioSnapshot | null>(null);
 
   // Trend chart period state
-  const now = new Date();
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
   const [trendPeriod, setTrendPeriod] = useState<TrendPeriod>("all");
-  const [trendYear, setTrendYear] = useState(now.getFullYear());
+  const [trendYear, setTrendYear] = useState(currentYear);
 
   // Get the latest snapshot to compare with current net worth
   const latestSnapshot = useMemo(() => {
@@ -219,14 +218,18 @@ export default function PortfolioPage() {
     }
   }, [allSnapshots]);
 
-  const sentinelRef = useSetPageHeader("Portfolio", null);
+  const headerActions = useMemo(() => (
+    <PlaidSyncButton />
+  ), []);
+
+  const sentinelRef = useSetPageHeader("Portfolio", headerActions);
 
   // Available years from snapshots
   const availableYears = useMemo(() => {
-    if (!allSnapshots || allSnapshots.length === 0) return [now.getFullYear()];
+    if (!allSnapshots || allSnapshots.length === 0) return [currentYear];
     const years = [...new Set(allSnapshots.map(s => s.date.getFullYear()))].sort((a, b) => b - a);
-    return years.length > 0 ? years : [now.getFullYear()];
-  }, [allSnapshots, now]);
+    return years.length > 0 ? years : [currentYear];
+  }, [allSnapshots, currentYear]);
 
   // Transform snapshot data for chart based on selected period
   const trendData = useMemo(() => {
@@ -290,10 +293,13 @@ export default function PortfolioPage() {
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Portfolio</h1>
-        <p className="text-muted-foreground">Track your net worth</p>
-        <div ref={sentinelRef} className="h-0" />
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Portfolio</h1>
+          <p className="text-muted-foreground">Track your net worth</p>
+          <div ref={sentinelRef} className="h-0" />
+        </div>
+        <PlaidSyncButton />
       </div>
 
       {/* Summary Cards */}
