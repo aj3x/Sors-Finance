@@ -16,9 +16,6 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# Generate Drizzle migrations if needed
-RUN npm run db:generate || true
-
 RUN npm run build
 
 # Stage 3: Production runtime
