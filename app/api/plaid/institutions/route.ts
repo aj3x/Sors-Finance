@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
           lastSync: item.lastSync,
           errorMessage: item.errorMessage,
           environment: item.environment, // Include environment for filtering
+          accessToken: item.accessToken, // Include for update mode
           accounts: accounts.map((row) => ({
             id: row.account.id,
             accountId: row.account.accountId,

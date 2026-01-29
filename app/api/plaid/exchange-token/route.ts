@@ -10,13 +10,14 @@ import { createPlaidClient, isPlaidConfigured } from "@/lib/plaid/client";
 import { mapPlaidTypeToPortfolioBucket, type PlaidEnvironmentType } from "@/lib/plaid/types";
 import { randomUUID } from "crypto";
 import { CountryCode } from "plaid";
+import { eq, and } from "drizzle-orm";
 
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await requireAuth(req);
 
     const body = await req.json();
-    const { publicToken, environment = "sandbox" } = body;
+    const { publicToken, environment = "sandbox", isUpdate = false } = body;
 
     if (!publicToken) {
       return NextResponse.json(
@@ -73,22 +74,68 @@ export async function POST(req: NextRequest) {
     // Save to database
     const now = new Date();
 
-    // Create plaid_items record
-    const [plaidItem] = await db
-      .insert(schema.plaidItems)
-      .values({
-        uuid: randomUUID(),
-        userId,
-        itemId,
-        accessToken: accessToken, // Store access token directly
-        institutionId,
-        institutionName,
-        environment: environment as PlaidEnvironmentType,
-        status: "active",
-        createdAt: now,
-        updatedAt: now,
-      })
-      .returning();
+    // Check if this is an update (item already exists for this user/itemId)
+    const existingItem = await db
+      .select()
+      .from(schema.plaidItems)
+      .where(
+        and(
+          eq(schema.plaidItems.userId, userId),
+          eq(schema.plaidItems.itemId, itemId)
+        )
+      )
+      .limit(1);
+
+    let plaidItem;
+
+    if (existingItem.length > 0) {
+      // Update existing item
+      const [updated] = await db
+        .update(schema.plaidItems)
+        .set({
+          accessToken: accessToken,
+          institutionId,
+          institutionName,
+          status: "active",
+          errorMessage: null,
+          updatedAt: now,
+        })
+        .where(eq(schema.plaidItems.id, existingItem[0].id))
+        .returning();
+      
+      plaidItem = updated;
+
+      // For update mode, return early without creating new accounts
+      if (isUpdate) {
+        return NextResponse.json({
+          success: true,
+          updated: true,
+          item: {
+            id: plaidItem.id,
+            institutionName,
+          },
+        });
+      }
+    } else {
+      // Create new plaid_items record
+      const [created] = await db
+        .insert(schema.plaidItems)
+        .values({
+          uuid: randomUUID(),
+          userId,
+          itemId,
+          accessToken: accessToken, // Store access token directly
+          institutionId,
+          institutionName,
+          environment: environment as PlaidEnvironmentType,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+        .returning();
+      
+      plaidItem = created;
+    }
 
     // Create plaid_accounts records (portfolio accounts will be created later via bucket selection)
     const createdAccounts = [];

@@ -62,6 +62,7 @@ import { useSetPageHeader } from "@/lib/page-header-context";
 import { useSnapshot } from "@/lib/snapshot-context";
 import { BucketCard, EditSnapshotDialog } from "@/components/portfolio";
 import { PlaidSyncButton } from "@/components/plaid/PlaidSyncButton";
+import { PlaidSyncBanner } from "@/components/plaid/PlaidSyncBanner";
 import { toast } from "sonner";
 
 const BUCKET_COLORS: Record<string, string> = {
@@ -132,6 +133,13 @@ export default function PortfolioPage() {
   // Snapshot state
   const autoSnapshotAttempted = useRef(false);
   const [editingSnapshot, setEditingSnapshot] = useState<DbPortfolioSnapshot | null>(null);
+
+  // Plaid sync banner state
+  const [syncResult, setSyncResult] = useState<{
+    accountsUpdated: number;
+    accountsFailed: number;
+    errors: string[];
+  } | null>(null);
 
   // Trend chart period state
   const currentYear = useMemo(() => new Date().getFullYear(), []);
@@ -219,7 +227,7 @@ export default function PortfolioPage() {
   }, [allSnapshots]);
 
   const headerActions = useMemo(() => (
-    <PlaidSyncButton />
+    <PlaidSyncButton onSyncComplete={setSyncResult} />
   ), []);
 
   const sentinelRef = useSetPageHeader("Portfolio", headerActions);
@@ -299,8 +307,18 @@ export default function PortfolioPage() {
           <p className="text-muted-foreground">Track your net worth</p>
           <div ref={sentinelRef} className="h-0" />
         </div>
-        <PlaidSyncButton />
+        <PlaidSyncButton onSyncComplete={setSyncResult} />
       </div>
+
+      {/* Plaid Sync Banner */}
+      {syncResult && (
+        <PlaidSyncBanner
+          accountsUpdated={syncResult.accountsUpdated}
+          accountsFailed={syncResult.accountsFailed}
+          errors={syncResult.errors}
+          onDismiss={() => setSyncResult(null)}
+        />
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
