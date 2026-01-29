@@ -10,12 +10,18 @@ interface PlaidSyncButtonProps {
   variant?: "default" | "secondary" | "ghost" | "outline";
   size?: "default" | "sm" | "lg" | "icon";
   className?: string;
+  onSyncComplete?: (result: {
+    accountsUpdated: number;
+    accountsFailed: number;
+    errors: string[];
+  }) => void;
 }
 
 export function PlaidSyncButton({ 
   variant = "secondary", 
   size = "sm",
-  className 
+  className,
+  onSyncComplete
 }: PlaidSyncButtonProps) {
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -42,10 +48,19 @@ export function PlaidSyncButton({
         invalidatePortfolio();
       }
 
+      // Pass results to parent component if callback provided
+      if (onSyncComplete) {
+        onSyncComplete({
+          accountsUpdated: updated,
+          accountsFailed: failed,
+          errors: data.errors || [],
+        });
+      }
+
       if (updated > 0 && failed === 0) {
         toast.success(`Synced ${updated} account${updated === 1 ? '' : 's'} successfully with Plaid`);
       } else if (updated > 0 && failed > 0) {
-        toast.warning(`Syncing ${updated} account${updated === 1 ? '' : 's'}, ${failed} failed`);
+        toast.warning(`Synced ${updated} account${updated === 1 ? '' : 's'}, ${failed} failed`);
         if (data.errors && data.errors.length > 0) {
           console.error('Sync errors:', data.errors);
         }

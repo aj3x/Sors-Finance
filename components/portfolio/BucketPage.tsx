@@ -13,6 +13,7 @@ import { usePrivacy } from "@/lib/privacy-context";
 import { useSetPageHeader } from "@/lib/page-header-context";
 import { AccountSection, AddAccountDialog, ApiKeyBanner } from "@/components/portfolio";
 import { PlaidSyncButton } from "@/components/plaid/PlaidSyncButton";
+import { PlaidSyncBanner } from "@/components/plaid/PlaidSyncBanner";
 
 interface BucketPageProps {
   bucket: BucketType;
@@ -46,10 +47,17 @@ export function BucketPage({ bucket, description }: BucketPageProps) {
   const config = BUCKET_CONFIG[bucket];
   const Icon = config.icon;
 
+  // Plaid sync banner state
+  const [syncResult, setSyncResult] = useState<{
+    accountsUpdated: number;
+    accountsFailed: number;
+    errors: string[];
+  } | null>(null);
+
   // Header actions
   const headerActions = useMemo(() => (
     <div className="flex gap-2">
-      <PlaidSyncButton />
+      <PlaidSyncButton onSyncComplete={setSyncResult} />
       <Button size="sm" onClick={() => setShowAddAccount(true)}>
         <Plus className="h-4 w-4 mr-2" />
         Add Account
@@ -82,13 +90,23 @@ export function BucketPage({ bucket, description }: BucketPageProps) {
           <div ref={sentinelRef} className="h-0" />
         </div>
         <div className="flex gap-2">
-          <PlaidSyncButton />
+          <PlaidSyncButton onSyncComplete={setSyncResult} />
           <Button size="sm" onClick={() => setShowAddAccount(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add Account
           </Button>
         </div>
       </div>
+
+      {/* Plaid Sync Banner */}
+      {syncResult && (
+        <PlaidSyncBanner
+          accountsUpdated={syncResult.accountsUpdated}
+          accountsFailed={syncResult.accountsFailed}
+          errors={syncResult.errors}
+          onDismiss={() => setSyncResult(null)}
+        />
+      )}
 
       {/* Total */}
       <div className="text-lg">

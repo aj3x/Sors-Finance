@@ -28,9 +28,11 @@ interface PlaidAccount {
 interface PlaidLinkButtonProps {
   onSuccess?: () => void;
   onExit?: () => void;
+  accessToken?: string;
+  mode?: "create" | "update";
 }
 
-export function PlaidLinkButton({ onSuccess, onExit }: PlaidLinkButtonProps) {
+export function PlaidLinkButton({ onSuccess, onExit, accessToken, mode = "create" }: PlaidLinkButtonProps) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isCreatingToken, setIsCreatingToken] = useState(false);
   
@@ -50,7 +52,7 @@ export function PlaidLinkButton({ onSuccess, onExit }: PlaidLinkButtonProps) {
       const response = await fetch("/api/plaid/link-token", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ environment }),
+        body: JSON.stringify({ environment, accessToken }),
       });
 
       if (!response.ok) {
@@ -81,7 +83,7 @@ export function PlaidLinkButton({ onSuccess, onExit }: PlaidLinkButtonProps) {
         const response = await fetch("/api/plaid/exchange-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ publicToken, environment }),
+          body: JSON.stringify({ publicToken, environment, isUpdate: mode === "update" }),
         });
 
         if (!response.ok) {
@@ -91,6 +93,16 @@ export function PlaidLinkButton({ onSuccess, onExit }: PlaidLinkButtonProps) {
         }
 
         const data = await response.json();
+        
+        // For update mode, just notify success without bucket selector
+        if (mode === "update") {
+          toast.success("Bank connection updated successfully");
+          if (onSuccess) {
+            onSuccess();
+          }
+          setLinkToken(null);
+          return;
+        }
         
         // Small delay before showing bucket selector to ensure Plaid cleanup completes
         setTimeout(() => {
@@ -184,6 +196,11 @@ export function PlaidLinkButton({ onSuccess, onExit }: PlaidLinkButtonProps) {
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               Loading...
+            </>
+          ) : mode === "update" ? (
+            <>
+              <Building2 className="h-4 w-4 mr-2" />
+              Update Connection
             </>
           ) : (
             <>

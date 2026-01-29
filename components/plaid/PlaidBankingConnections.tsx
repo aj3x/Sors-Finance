@@ -55,6 +55,7 @@ interface PlaidInstitution {
   status: string;
   lastSync?: Date;
   environment: PlaidEnvironmentType;
+  accessToken?: string;
   accounts: Array<{
     id: number;
     name: string;
@@ -333,6 +334,14 @@ PLAID_CLIENT_ID=your_client_id_here{"\n"}PLAID_SECRET=your_secret_here
                         </div>
 
                         <div className="flex gap-1">
+                          {(institution.status === "login_required" || institution.status === "error") && (
+                            <PlaidLinkButton
+                              mode="update"
+                              accessToken={institution.accessToken}
+                              onSuccess={loadInstitutions}
+                            />
+                          )}
+                          
                           <Button
                             variant="ghost"
                             size="icon"
