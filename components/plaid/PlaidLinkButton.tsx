@@ -29,12 +29,14 @@ interface PlaidLinkButtonProps {
   onSuccess?: () => void;
   onExit?: () => void;
   hasCredentials?: boolean;
-  environment?: PlaidEnvironmentType; // Accept environment from parent
 }
 
-export function PlaidLinkButton({ onSuccess, onExit, hasCredentials = false, environment = "production" }: PlaidLinkButtonProps) {
+export function PlaidLinkButton({ onSuccess, onExit, hasCredentials = false }: PlaidLinkButtonProps) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isCreatingToken, setIsCreatingToken] = useState(false);
+  
+  // Always use production environment
+  const environment: PlaidEnvironmentType = "production";
   
   // Bucket selector state
   const [showBucketSelector, setShowBucketSelector] = useState(false);

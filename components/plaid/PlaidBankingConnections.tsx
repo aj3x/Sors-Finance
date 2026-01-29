@@ -27,13 +27,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Card,
   CardContent,
   CardDescription,
@@ -96,7 +89,6 @@ export function PlaidBankingConnections({ plaidConfigured }: PlaidBankingConnect
   const [editingInstitution, setEditingInstitution] = useState<PlaidInstitution | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
-  const [environmentFilter, setEnvironmentFilter] = useState<PlaidEnvironmentType>("sandbox"); // Start with sandbox to see existing banks
 
   // Load connected institutions
   const loadInstitutions = async () => {
@@ -113,11 +105,6 @@ export function PlaidBankingConnections({ plaidConfigured }: PlaidBankingConnect
       setIsLoadingInstitutions(false);
     }
   };
-
-  // Filter institutions by environment
-  const filteredInstitutions = institutions.filter(
-    (inst) => inst.environment === environmentFilter
-  );
 
   useEffect(() => {
     loadInstitutions();
@@ -256,9 +243,24 @@ export function PlaidBankingConnections({ plaidConfigured }: PlaidBankingConnect
         {/* Production Note */}
         <Alert>
           <Info className="h-4 w-4" />
-          <AlertDescription className="text-sm">
-            <strong>Production keys required.</strong> Plaid offers Sandbox (test) and Production modes.
-            Production gives <strong>200 free API calls</strong>, then pay-as-you-go.
+          <AlertDescription className="text-sm space-y-2">
+            <div>
+              <strong>Production API Keys Required</strong>
+              <p className="text-muted-foreground text-xs mt-1">
+                Plaid offers Sandbox (test) and Production modes. Sandbox environments cannot import real transactions.
+                Use Production keys to connect actual bank accounts.
+              </p>
+            </div>
+            <div>
+              <strong>Required Plaid Scopes</strong>
+              <p className="text-muted-foreground text-xs mt-1">
+                When creating your Plaid application, you must enable these scopes:
+              </p>
+              <ul className="text-muted-foreground text-xs list-disc list-inside ml-2 mt-1">
+                <li><strong>Transactions:</strong> Import and categorize bank transactions ($0.30 per account per month)</li>
+                <li><strong>Balance:</strong> Sync current account balances ($0.10 per API call)</li>
+              </ul>
+            </div>
           </AlertDescription>
         </Alert>
 
@@ -315,22 +317,7 @@ PLAID_CLIENT_ID=your_client_id_here{"\n"}PLAID_SECRET=your_secret_here
                   </p>
                 </div>
                 <div className="flex gap-2">
-                  {/* Environment Filter */}
-                  <Select
-                    value={environmentFilter}
-                    onValueChange={(value) => setEnvironmentFilter(value as PlaidEnvironmentType)}
-                  >
-                    <SelectTrigger className="w-[140px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="production">Production</SelectItem>
-                      <SelectItem value="sandbox">Sandbox</SelectItem>
-                    </SelectContent>
-                  </Select>
-
                   <PlaidLinkButton
-                    environment={environmentFilter}
                     onSuccess={() => {
                       // Institutions will refresh when bucket mapping is confirmed
                     }}
@@ -342,15 +329,15 @@ PLAID_CLIENT_ID=your_client_id_here{"\n"}PLAID_SECRET=your_secret_here
                 <div className="flex items-center justify-center py-8">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                 </div>
-              ) : filteredInstitutions.length === 0 ? (
+              ) : institutions.length === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <Building2 className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                  <p>No banks connected in {environmentFilter} environment</p>
-                  <p className="text-sm">Click &quot;Connect a Bank&quot; to get started</p>
+                  <p>No banks connected yet</p>
+                  <p className="text-sm">Click &quot;Add a Bank&quot; to get started</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {filteredInstitutions.map((institution) => (
+                  {institutions.map((institution) => (
                     <div
                       key={institution.id}
                       className="border rounded-lg p-4 space-y-3"

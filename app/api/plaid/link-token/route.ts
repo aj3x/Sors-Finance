@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
         client_user_id: userId.toString(),
       },
       client_name: "Sors Finance",
-      products: [Products.Transactions, Products.Auth],
+      products: [Products.Transactions],
       country_codes: [CountryCode.Ca],
       language: "en",
     };
