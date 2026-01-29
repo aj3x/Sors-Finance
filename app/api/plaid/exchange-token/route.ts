@@ -6,11 +6,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/api-helper";
 import { db, schema } from "@/lib/db/connection";
-import { createPlaidClient } from "@/lib/plaid/client";
-import { encrypt, decrypt } from "@/lib/encryption";
-import { PLAID_SETTINGS_KEYS, type PlaidCredentials, mapPlaidTypeToPortfolioBucket, getCredentialKeys, type PlaidEnvironmentType } from "@/lib/plaid/types";
+import { createPlaidClient, isPlaidConfigured } from "@/lib/plaid/client";
+import { mapPlaidTypeToPortfolioBucket, type PlaidEnvironmentType } from "@/lib/plaid/types";
 import { randomUUID } from "crypto";
-import { eq } from "drizzle-orm";
 import { CountryCode } from "plaid";
 
 export async function POST(req: NextRequest) {
@@ -27,32 +25,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Get user's Plaid credentials for the selected environment
-    const settingsResult = await db
-      .select()
-      .from(schema.settings)
-      .where(eq(schema.settings.userId, userId));
-
-    const settingsMap = new Map(settingsResult.map((s) => [s.key, s.value]));
-
-    const keys = getCredentialKeys();
-    const encryptedClientId = settingsMap.get(keys.clientId);
-    const encryptedSecret = settingsMap.get(keys.secret);
-
-    if (!encryptedClientId || !encryptedSecret) {
+    // Check if Plaid is configured
+    if (!isPlaidConfigured()) {
       return NextResponse.json(
-        { error: `Plaid credentials not configured` },
+        { error: "Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET in your .env file." },
         { status: 400 }
       );
     }
 
-    const credentials: PlaidCredentials = {
-      clientId: decrypt(encryptedClientId),
-      secret: decrypt(encryptedSecret),
-      environment: environment as PlaidEnvironmentType,
-    };
-
-    const client = createPlaidClient(credentials);
+    const client = createPlaidClient(environment as PlaidEnvironmentType);
 
     // Exchange public token for access token
     const tokenResponse = await client.itemPublicTokenExchange({
@@ -99,7 +80,7 @@ export async function POST(req: NextRequest) {
         uuid: randomUUID(),
         userId,
         itemId,
-        accessToken: encrypt(accessToken), // Encrypt the access token
+        accessToken: accessToken, // Store access token directly
         institutionId,
         institutionName,
         environment: environment as PlaidEnvironmentType,

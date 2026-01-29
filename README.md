@@ -39,24 +39,38 @@ Sors supports optional Plaid integration for automatic transaction imports and b
    - Sign up and create a new application
    - Get your `client_id` and `secret` (works for sandbox, development, and production)
 
-2. **Generate Encryption Key**
-   - In Sors Settings → Integrations, use the built-in key generator
-   - Copy the generated 64-character hex key
-   - Add to your `.env.local` file:
-     ```
-     PLAID_ENCRYPTION_KEY=your_64_character_hex_key_here
-     ```
-   - For Docker, add as environment variable in `docker-compose.yml`
+2. **Get a Free Finnhub API Key**
+   - Go to [finnhub.io/register](https://finnhub.io/register)
+   - Sign up and get your API key (60 API calls/minute free tier)
 
-3. **Add Plaid Credentials in Settings**
-   - Go to Settings → Integrations → Plaid Banking Integration
-   - Enter your Plaid `client_id` and `secret`
-   - Test connection to verify
+3. **Configure Environment Variables**
+   
+   **For Local Development:**
+   ```bash
+   # Copy the example file
+   cp .env.example .env
+   
+   # Edit .env and add your API keys:
+   PLAID_CLIENT_ID=your_plaid_client_id_here
+   PLAID_SECRET=your_plaid_secret_here
+   FINNHUB_API_KEY=your_finnhub_api_key_here
+   ```
+   
+   **For Docker CLI:**
+   - Same as above - Docker Compose automatically loads the `.env` file
+   
+   **For Portainer/Docker UI:**
+   - In your stack configuration, add these environment variables:
+     - `PLAID_CLIENT_ID`
+     - `PLAID_SECRET`
+     - `FINNHUB_API_KEY`
 
 4. **Connect Your Banks**
-   - Click "Connect a Bank" in Settings
+   - Start the app and go to Settings → Integrations
+   - Click "Connect a Bank"
    - Follow Plaid Link flow to connect your accounts
-   - Portfolio accounts are created automatically
+   - Choose portfolio bucket (Savings/Investments/Assets/Debt) for each account
+   - Balances sync automatically
 
 5. **Import Transactions**
    - Go to Transactions page → Import
@@ -66,10 +80,9 @@ Sors supports optional Plaid integration for automatic transaction imports and b
 
 ### Security
 
-- All Plaid credentials and access tokens are encrypted using AES-256-GCM
-- Encryption key is stored in your environment variables (never in the database)
-- Each user's credentials are encrypted separately
-- Access tokens are never logged or exposed
+- API keys stored as environment variables (never in database)
+- All credentials only accessible server-side
+- Multi-user households share API keys (appropriate for self-hosted apps)
 
 ### Pricing
 

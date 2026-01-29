@@ -11,9 +11,7 @@ import { requireAuth } from "@/lib/auth/api-helper";
 import { db } from "@/lib/db/connection";
 import { plaidItems, plaidAccounts, portfolioItems, settings } from "@/lib/db/schema";
 import { eq, and } from "drizzle-orm";
-import { createPlaidClient } from "@/lib/plaid/client";
-import { decrypt } from "@/lib/encryption";
-import type { PlaidCredentials } from "@/lib/plaid/types";
+import { createPlaidClient, isPlaidConfigured } from "@/lib/plaid/client";
 import { PLAID_SETTINGS_KEYS } from "@/lib/plaid/types";
 
 interface SyncResult {
@@ -32,44 +30,13 @@ export async function POST(request: NextRequest) {
   try {
     const { userId } = await requireAuth(request);
 
-    // Get Plaid credentials from settings
-    const credentialsRows = await db
-      .select()
-      .from(settings)
-      .where(
-        and(
-          eq(settings.userId, userId),
-          eq(settings.key, PLAID_SETTINGS_KEYS.CLIENT_ID)
-        )
-      );
-
-    if (!credentialsRows || credentialsRows.length === 0) {
+    // Check if Plaid is configured
+    if (!isPlaidConfigured()) {
       return NextResponse.json(
-        { error: "Plaid credentials not configured" },
+        { error: "Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET in your .env file." },
         { status: 400 }
       );
     }
-
-    const secretRows = await db
-      .select()
-      .from(settings)
-      .where(
-        and(
-          eq(settings.userId, userId),
-          eq(settings.key, PLAID_SETTINGS_KEYS.SECRET)
-        )
-      );
-
-    if (!secretRows || secretRows.length === 0) {
-      return NextResponse.json(
-        { error: "Plaid credentials not configured" },
-        { status: 400 }
-      );
-    }
-
-    // Decrypt credentials
-    const clientId = decrypt(credentialsRows[0].value);
-    const secret = decrypt(secretRows[0].value);
 
     // Get all Plaid items for this user
     const userPlaidItems = await db
@@ -99,25 +66,20 @@ export async function POST(request: NextRequest) {
     // Process each Plaid item
     for (const item of userPlaidItems) {
       try {
-        // Decrypt access token
-        const accessToken = decrypt(item.accessToken);
+        // Use access token directly
+        const accessToken = item.accessToken;
 
-        // Create Plaid client with user's credentials
-        const credentials: PlaidCredentials = {
-          clientId,
-          secret,
-          environment: item.environment as "sandbox" | "development" | "production",
-        };
-
-        const client = createPlaidClient(credentials);
+        // Create Plaid client from environment variables
+        const client = createPlaidClient(item.environment as "sandbox" | "development" | "production");
 
         // Fetch balances
         const balanceResponse = await client.accountsBalanceGet({
           access_token: accessToken,
         });
 
-        // Get Plaid accounts for this item that are linked to portfolio accounts
-        const linkedAccounts = await db
+        // Get Plaid accounts for this item that are linked to portfolio items
+        // Join directly via portfolioItems.plaidAccountId for 1-to-1 matching
+        let linkedAccounts = await db
           .select({
             plaidAccount: plaidAccounts,
             portfolioItem: portfolioItems,
@@ -125,7 +87,7 @@ export async function POST(request: NextRequest) {
           .from(plaidAccounts)
           .innerJoin(
             portfolioItems,
-            eq(plaidAccounts.portfolioAccountId, portfolioItems.accountId)
+            eq(plaidAccounts.id, portfolioItems.plaidAccountId)
           )
           .where(
             and(
@@ -133,6 +95,26 @@ export async function POST(request: NextRequest) {
               eq(plaidAccounts.userId, userId)
             )
           );
+
+        // Fallback: if no results, try joining through portfolio account
+        if (linkedAccounts.length === 0) {
+          linkedAccounts = await db
+            .select({
+              plaidAccount: plaidAccounts,
+              portfolioItem: portfolioItems,
+            })
+            .from(plaidAccounts)
+            .innerJoin(
+              portfolioItems,
+              eq(plaidAccounts.portfolioAccountId, portfolioItems.accountId)
+            )
+            .where(
+              and(
+                eq(plaidAccounts.plaidItemId, item.id),
+                eq(plaidAccounts.userId, userId)
+              )
+            );
+        }
 
         // Update portfolio items with current balances
         for (const account of balanceResponse.data.accounts) {
@@ -143,11 +125,12 @@ export async function POST(request: NextRequest) {
           if (linkedAccount) {
             const balance = account.balances.current || 0;
 
-            // Update portfolio item
+            // Update portfolio item balance and ensure plaidAccountId link is set
             await db
               .update(portfolioItems)
               .set({
                 currentValue: balance,
+                plaidAccountId: linkedAccount.plaidAccount.id,
                 updatedAt: new Date(),
               })
               .where(eq(portfolioItems.id, linkedAccount.portfolioItem.id));

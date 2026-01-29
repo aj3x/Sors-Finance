@@ -5,48 +5,27 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/api-helper";
-import { db, schema } from "@/lib/db/connection";
-import { decrypt } from "@/lib/encryption";
-import { createPlaidClient } from "@/lib/plaid/client";
-import { PLAID_SETTINGS_KEYS, type PlaidCredentials, getCredentialKeys, type PlaidEnvironmentType } from "@/lib/plaid/types";
+import { createPlaidClient, isPlaidConfigured } from "@/lib/plaid/client";
+import type { PlaidEnvironmentType } from "@/lib/plaid/types";
 import { CountryCode, Products } from "plaid";
-import { eq, and } from "drizzle-orm";
 
 export async function POST(req: NextRequest) {
   try {
     const { userId } = await requireAuth(req);
 
-    // Parse body to get environment selection
-    const body = await req.json().catch(() => ({}));
-    const { accessToken, environment = "sandbox" } = body;
-
-    // Get user's Plaid credentials for the selected environment
-    const settingsResult = await db
-      .select()
-      .from(schema.settings)
-      .where(eq(schema.settings.userId, userId));
-
-    const settingsMap = new Map(settingsResult.map((s) => [s.key, s.value]));
-
-    const keys = getCredentialKeys();
-    const encryptedClientId = settingsMap.get(keys.clientId);
-    const encryptedSecret = settingsMap.get(keys.secret);
-
-    if (!encryptedClientId || !encryptedSecret) {
+    // Check if Plaid is configured
+    if (!isPlaidConfigured()) {
       return NextResponse.json(
-        { error: `Plaid credentials not configured. Please set up credentials in Settings.` },
+        { error: "Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET in your .env file." },
         { status: 400 }
       );
     }
 
-    // Decrypt credentials
-    const credentials: PlaidCredentials = {
-      clientId: decrypt(encryptedClientId),
-      secret: decrypt(encryptedSecret),
-      environment: environment as PlaidEnvironmentType,
-    };
+    // Parse body to get environment selection
+    const body = await req.json().catch(() => ({}));
+    const { accessToken, environment = "sandbox" } = body;
 
-    const client = createPlaidClient(credentials);
+    const client = createPlaidClient(environment as PlaidEnvironmentType);
 
     // Create link token request
     const request: any = {

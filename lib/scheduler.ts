@@ -75,44 +75,14 @@ async function syncPlaidBalancesForUser(userId: number): Promise<{ success: bool
   try {
     // Import dynamically to avoid circular dependencies
     const { db: dbInstance } = await import("./db/connection");
-    const { plaidItems, plaidAccounts, portfolioItems, settings } = await import("./db/schema");
+    const { plaidItems, plaidAccounts, portfolioItems } = await import("./db/schema");
     const { eq, and } = await import("drizzle-orm");
-    const { createPlaidClient } = await import("./plaid/client");
-    const { decrypt } = await import("./encryption");
-    const { PLAID_SETTINGS_KEYS } = await import("./plaid/types");
+    const { createPlaidClient, isPlaidConfigured } = await import("./plaid/client");
 
-    // Get Plaid credentials from settings
-    const credentialsRows = await dbInstance
-      .select()
-      .from(settings)
-      .where(
-        and(
-          eq(settings.userId, userId),
-          eq(settings.key, PLAID_SETTINGS_KEYS.CLIENT_ID)
-        )
-      );
-
-    if (!credentialsRows || credentialsRows.length === 0) {
-      return { success: true, accountsUpdated: 0, errors: ["No Plaid credentials configured"] };
+    // Check if Plaid is configured
+    if (!isPlaidConfigured()) {
+      return { success: true, accountsUpdated: 0, errors: ["Plaid credentials not configured in environment variables"] };
     }
-
-    const secretRows = await dbInstance
-      .select()
-      .from(settings)
-      .where(
-        and(
-          eq(settings.userId, userId),
-          eq(settings.key, PLAID_SETTINGS_KEYS.SECRET)
-        )
-      );
-
-    if (!secretRows || secretRows.length === 0) {
-      return { success: true, accountsUpdated: 0, errors: ["No Plaid credentials configured"] };
-    }
-
-    // Decrypt credentials
-    const clientId = decrypt(credentialsRows[0].value);
-    const secret = decrypt(secretRows[0].value);
 
     // Get all Plaid items for this user
     const userPlaidItems = await dbInstance
@@ -130,17 +100,11 @@ async function syncPlaidBalancesForUser(userId: number): Promise<{ success: bool
     // Process each Plaid item
     for (const item of userPlaidItems) {
       try {
-        // Decrypt access token
-        const accessToken = decrypt(item.accessToken);
+        // Use access token directly
+        const accessToken = item.accessToken;
 
-        // Create Plaid client
-        const credentials = {
-          clientId,
-          secret,
-          environment: item.environment as "sandbox" | "development" | "production",
-        };
-
-        const client = createPlaidClient(credentials);
+        // Create Plaid client from environment variables
+        const client = createPlaidClient(item.environment as "sandbox" | "development" | "production");
 
         // Fetch balances
         const balanceResponse = await client.accountsBalanceGet({

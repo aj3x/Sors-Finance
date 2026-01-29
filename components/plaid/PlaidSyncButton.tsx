@@ -4,6 +4,7 @@ import { useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { invalidatePortfolio } from "@/lib/hooks/useDatabase";
 
 interface PlaidSyncButtonProps {
   variant?: "default" | "secondary" | "ghost" | "outline";
@@ -31,11 +32,16 @@ export function PlaidSyncButton({
       }
 
       const data = await response.json();
-      
+
       // Show success with details
       const updated = data.accountsUpdated || 0;
       const failed = data.accountsFailed || 0;
-      
+
+      // Invalidate portfolio cache to refresh UI with new balances
+      if (updated > 0) {
+        invalidatePortfolio();
+      }
+
       if (updated > 0 && failed === 0) {
         toast.success(`Synced ${updated} account${updated === 1 ? '' : 's'} successfully with Plaid`);
       } else if (updated > 0 && failed > 0) {

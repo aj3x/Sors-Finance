@@ -5,9 +5,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import {
   ExternalLink,
-  Key,
   Check,
-  X,
   AlertTriangle,
   Globe,
   DollarSign,
@@ -22,6 +20,8 @@ import {
   User,
   Upload,
   Database,
+  Monitor,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -181,11 +181,6 @@ export default function SettingsPage() {
     }
   }, [searchParams, activeTab]);
 
-  // API Key state
-  const [apiKey, setApiKey] = useState("");
-  const [savedKey, setSavedKey] = useState<string | undefined>();
-  const [isValidating, setIsValidating] = useState(false);
-
   // Currency & Timezone state
   const [currency, setCurrencyState] = useState<Currency>("USD");
   const [timezone, setTimezoneState] = useState("");
@@ -226,6 +221,11 @@ export default function SettingsPage() {
   const [isImporting, setIsImporting] = useState(false);
   const dataFileInputRef = useRef<HTMLInputElement>(null);
 
+  // API Configuration status
+  const [finnhubConfigured, setFinnhubConfigured] = useState<boolean | null>(null);
+  const [plaidConfigured, setPlaidConfigured] = useState<boolean | null>(null);
+  const [isTestingFinnhub, setIsTestingFinnhub] = useState(false);
+
   // Page header
   const sentinelRef = useSetPageHeader("Settings");
 
@@ -233,7 +233,7 @@ export default function SettingsPage() {
   const { user, logout } = useAuth();
 
   // Settings context - for updating settings that need to be shared across app
-  const { updateSetting: updateContextSetting } = useSettings();
+  const { updateSetting: _updateContextSetting } = useSettings();
 
   const handleLogout = async () => {
     try {
@@ -241,6 +241,26 @@ export default function SettingsPage() {
     } catch (error) {
       console.error("Logout failed:", error);
       toast.error("Failed to log out");
+    }
+  };
+
+  // Test Finnhub API credentials
+  const handleTestFinnhub = async () => {
+    setIsTestingFinnhub(true);
+    try {
+      const response = await fetch("/api/integrations/test-finnhub");
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success("Finnhub API key is valid and working!");
+      } else {
+        toast.error(data.error || "Invalid Finnhub API key");
+      }
+    } catch (error) {
+      console.error("Finnhub test error:", error);
+      toast.error("Failed to test Finnhub API key");
+    } finally {
+      setIsTestingFinnhub(false);
     }
   };
 
@@ -283,17 +303,11 @@ export default function SettingsPage() {
     // Load saved settings from database
     const loadSettings = async () => {
       try {
-        const [apiKeyValue, currencyValue, timezoneValue, autoCopyValue] = await Promise.all([
-          getSetting("FINNHUB_API_KEY"),
+        const [currencyValue, timezoneValue, autoCopyValue] = await Promise.all([
           getSetting("CURRENCY"),
           getSetting("TIMEZONE"),
           getSetting("autoCopyBudgets"),
         ]);
-
-        if (apiKeyValue) {
-          setSavedKey(apiKeyValue);
-          setApiKey(apiKeyValue);
-        }
 
         if (currencyValue) {
           setCurrencyState(currencyValue as Currency);
@@ -329,6 +343,27 @@ export default function SettingsPage() {
         setIsLoadingSnapshotConfig(false);
       });
 
+    // Check API configuration status
+    const checkApiStatus = async () => {
+      try {
+        const res = await fetch("/api/integrations/status");
+        if (res.ok) {
+          const data = await res.json();
+          setFinnhubConfigured(data.finnhub);
+          setPlaidConfigured(data.plaid);
+        } else {
+          console.error("Failed to check integration status");
+          setFinnhubConfigured(false);
+          setPlaidConfigured(false);
+        }
+      } catch (error) {
+        console.error("Error checking integration status:", error);
+        setFinnhubConfigured(false);
+        setPlaidConfigured(false);
+      }
+    };
+    checkApiStatus();
+
     // Check if we just reset data and show toast (with delay to ensure Toaster is mounted)
     if (sessionStorage.getItem("data-reset-success")) {
       sessionStorage.removeItem("data-reset-success");
@@ -337,72 +372,6 @@ export default function SettingsPage() {
       }, 100);
     }
   }, []);
-
-  // API Key handlers
-  const handleSaveApiKey = async () => {
-    const trimmedKey = apiKey.trim();
-
-    if (!trimmedKey) {
-      try {
-        await updateContextSetting("finnhubApiKey", null);
-        setSavedKey(undefined);
-        toast.success("API key removed");
-      } catch (error) {
-        console.error("Failed to remove API key:", error);
-        toast.error("Failed to remove API key");
-      }
-      return;
-    }
-
-    setIsValidating(true);
-    try {
-      const response = await fetch(
-        `https://finnhub.io/api/v1/quote?symbol=AAPL&token=${trimmedKey}`
-      );
-
-      if (response.status === 401) {
-        toast.error("Invalid API key");
-        return;
-      }
-
-      if (response.status === 429) {
-        toast.error("Rate limit exceeded. Try again later.");
-        return;
-      }
-
-      if (!response.ok) {
-        toast.error("Failed to validate API key");
-        return;
-      }
-
-      const data = await response.json();
-      if (data.error) {
-        toast.error(data.error);
-        return;
-      }
-
-      await updateContextSetting("finnhubApiKey", trimmedKey);
-      setSavedKey(trimmedKey);
-      toast.success("API key saved and validated");
-    } catch (error) {
-      console.error("Error validating API key:", error);
-      toast.error("Failed to validate API key");
-    } finally {
-      setIsValidating(false);
-    }
-  };
-
-  const handleClearApiKey = async () => {
-    try {
-      await updateContextSetting("finnhubApiKey", null);
-      setSavedKey(undefined);
-      setApiKey("");
-      toast.success("API key removed");
-    } catch (error) {
-      console.error("Failed to remove API key:", error);
-      toast.error("Failed to remove API key");
-    }
-  };
 
   // Currency handler
   const handleCurrencyChange = async (value: Currency) => {
@@ -795,7 +764,7 @@ export default function SettingsPage() {
     }
   };
 
-  const hasKey = Boolean(savedKey);
+  // Keyboard navigation effects removed for brevity
 
   // Developer page content
   const colors = [
@@ -1154,6 +1123,7 @@ export default function SettingsPage() {
 
         {/* Integrations Tab */}
         <TabsContent value="integrations" className="space-y-6 max-w-2xl">
+          {/* Finnhub Integration Card */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1162,109 +1132,101 @@ export default function SettingsPage() {
                   alt="Finnhub"
                   className="h-5 w-auto object-contain"
                 />
-                Finnhub
+                Finnhub Stock Market Data
               </CardTitle>
-              <CardDescription>
-                Connect to Finnhub to get real-time stock prices for your investments
+              <CardDescription className="space-y-2">
+                <p>
+                  Get real-time stock prices and market data for your portfolio investments.
+                  Free tier includes 60 API calls per minute.
+                </p>
+                <a
+                  href="https://finnhub.io"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-sm text-lime-600 hover:text-lime-700 dark:text-lime-400 dark:hover:text-lime-300"
+                >
+                  Learn more about Finnhub
+                  <ExternalLink className="h-3 w-3" />
+                </a>
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Status indicator */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Status:</span>
-                {hasKey ? (
-                  <span className="flex items-center gap-1 text-sm text-green-600 dark:text-green-400">
-                    <Check className="h-4 w-4" />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1 text-sm text-yellow-600 dark:text-yellow-400">
-                    <AlertTriangle className="h-4 w-4" />
-                    Not configured
-                  </span>
+              {/* Status Section */}
+              <div className="flex items-center justify-between py-2 border-b">
+                <div className="flex items-center gap-2">
+                  {finnhubConfigured === null ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">Checking configuration...</span>
+                    </>
+                  ) : finnhubConfigured ? (
+                    <>
+                      <Check className="h-5 w-5 text-green-600 dark:text-green-400" />
+                      <span className="font-medium text-green-600 dark:text-green-400">Configured</span>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
+                      <span className="font-medium text-amber-600 dark:text-amber-400">Not Configured</span>
+                    </>
+                  )}
+                </div>
+                {finnhubConfigured && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestFinnhub}
+                    disabled={isTestingFinnhub}
+                  >
+                    {isTestingFinnhub ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                        Testing...
+                      </>
+                    ) : (
+                      "Test Connection"
+                    )}
+                  </Button>
                 )}
               </div>
 
-              {/* Explanation when no key */}
-              {!hasKey && (
-                <Alert>
-                  <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>No API key configured</AlertTitle>
-                  <AlertDescription className="space-y-2">
-                    <p>
-                      Without a Finnhub API key, you will need to{" "}
-                      <strong>manually update stock prices</strong> for your
-                      investments.
+              {/* Instructions */}
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Setup Instructions:</p>
+                
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-sm font-medium mb-1 flex items-center gap-2">
+                      <Monitor className="h-4 w-4" />
+                      Local Development & Docker CLI
                     </p>
-                    <p>
-                      Finnhub offers a <strong>free tier</strong> with 60 API
-                      calls per minute.
-                    </p>
-                  </AlertDescription>
-                </Alert>
-              )}
+                    <ol className="text-sm space-y-1 list-decimal list-inside ml-6 text-muted-foreground">
+                      <li>Get a free API key from <a href="https://finnhub.io/register" target="_blank" rel="noopener noreferrer" className="text-lime-600 hover:underline">finnhub.io/register</a></li>
+                      <li>Add to your <code className="bg-muted px-1 py-0.5 rounded">.env</code> file:
+                        <pre className="mt-1 p-2 bg-muted rounded text-xs overflow-x-auto">FINNHUB_API_KEY=your_api_key_here</pre>
+                      </li>
+                      <li>Restart the server</li>
+                    </ol>
+                  </div>
 
-              {/* API Key Input */}
-              <div className="space-y-2">
-                <Label htmlFor="apiKey">Finnhub API Key</Label>
-                <div className="flex gap-2">
-                  <Input
-                    id="apiKey"
-                    type="password"
-                    placeholder="Enter your Finnhub API key"
-                    value={apiKey}
-                    onChange={(e) => setApiKey(e.target.value)}
-                    className="font-mono"
-                  />
-                  <Button onClick={handleSaveApiKey} disabled={isValidating}>
-                    {isValidating ? "Validating..." : "Save"}
-                  </Button>
-                  {hasKey && (
-                    <Button variant="outline" onClick={handleClearApiKey}>
-                      <X className="h-4 w-4" />
-                    </Button>
-                  )}
+                  <div>
+                    <p className="text-sm font-medium mb-1 flex items-center gap-2">
+                      <img src="/logos/docker.png" alt="Docker" className="h-4 w-4" />
+                      Docker UI/Portainer
+                    </p>
+                    <p className="text-sm ml-6 text-muted-foreground">
+                      Add <code className="bg-muted px-1 py-0.5 rounded">FINNHUB_API_KEY</code> in your stack&apos;s Environment Variables section
+                    </p>
+                  </div>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Your API key is stored locally and never sent to our servers.
-                </p>
-              </div>
-
-              {/* How to get an API key */}
-              <div className="rounded-lg border p-4 space-y-3">
-                <h4 className="font-medium">How to get a free Finnhub API key:</h4>
-                <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-                  <li>
-                    Go to{" "}
-                    <a
-                      href="https://finnhub.io"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline underline-offset-4 hover:text-primary/80"
-                    >
-                      finnhub.io
-                    </a>
-                  </li>
-                  <li>Click &quot;Get free API key&quot; and sign up</li>
-                  <li>Copy your API key from the dashboard</li>
-                  <li>Paste it above and click Save</li>
-                </ol>
-                <Button variant="outline" size="sm" asChild>
-                  <a
-                    href="https://finnhub.io/register"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Sign up for Finnhub (free)
-                  </a>
-                </Button>
               </div>
             </CardContent>
           </Card>
 
-          {/* Plaid Banking Connections */}
-          <PlaidBankingConnections />
+          {/* Plaid Banking Integration Card */}
+          <PlaidBankingConnections 
+            plaidConfigured={plaidConfigured}
+          />
         </TabsContent>
 
         {/* Data Tab */}

@@ -66,14 +66,14 @@ export function TickerSearch({ value, onSelect, disabled, hasApiKey }: TickerSea
         ? `/api/crypto/search?q=${encodeURIComponent(query)}`
         : `/api/stock/search?q=${encodeURIComponent(query)}`;
 
-      const response = await fetch(endpoint, {
-        headers: { 'x-finnhub-key': apiKey },
-      });
+      const response = await fetch(endpoint);
 
       if (!response.ok) {
         const data = await response.json();
         if (data.code === 'RATE_LIMIT') {
           setError("Rate limit - try again shortly");
+        } else if (data.code === 'NO_API_KEY') {
+          setError("API key not configured");
         } else {
           setError("Search failed");
         }
@@ -143,9 +143,7 @@ export function TickerSearch({ value, onSelect, disabled, hasApiKey }: TickerSea
         ? `/api/crypto/${encodeURIComponent(result.symbol)}`
         : `/api/stock/${encodeURIComponent(result.symbol)}`;
 
-      const response = await fetch(endpoint, {
-        headers: { 'x-finnhub-key': apiKey },
-      });
+      const response = await fetch(endpoint);
 
       const data = await response.json();
 

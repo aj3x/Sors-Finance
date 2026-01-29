@@ -15,11 +15,13 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const query = searchParams.get('q')?.toLowerCase() || '';
-    const apiKey = request.headers.get('x-finnhub-key');
+    
+    // Get API key from environment
+    const apiKey = process.env.FINNHUB_API_KEY;
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'API key not configured', code: 'NO_API_KEY' },
+        { error: 'Finnhub API key not configured. Please set FINNHUB_API_KEY in your .env file.', code: 'NO_API_KEY' },
         { status: 401 }
       );
     }

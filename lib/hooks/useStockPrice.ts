@@ -58,14 +58,12 @@ export function useStockPrice(ticker: string | undefined, apiKey: string | null 
     setError(null);
 
     try {
-      const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`, {
-        headers: apiKey ? { 'x-finnhub-key': apiKey } : {},
-      });
+      const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`);
 
       if (!response.ok) {
         const errorData: StockApiError = await response.json();
         if (errorData.code === 'NO_API_KEY') {
-          throw new Error('Finnhub API key not configured. Go to Settings to add your API key.');
+          throw new Error('Finnhub API key not configured. Please set FINNHUB_API_KEY in your .env file.');
         }
         throw new Error(errorData.error || 'Failed to fetch stock price');
       }
@@ -188,9 +186,7 @@ export async function lookupTicker(ticker: string, apiKey?: string | null): Prom
   }
 
   try {
-    const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`, {
-      headers: apiKey ? { 'x-finnhub-key': apiKey } : {},
-    });
+    const response = await fetch(`/api/stock/${encodeURIComponent(upperTicker)}`);
 
     if (!response.ok) {
       return null;

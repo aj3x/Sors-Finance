@@ -1,40 +1,41 @@
 /**
  * API Route: Test Plaid Credentials
- * POST /api/plaid/test
+ * GET /api/plaid/test
+ * 
+ * Tests if Plaid credentials from environment variables are valid
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { requireAuth } from "@/lib/auth/api-helper";
-import { testPlaidCredentials } from "@/lib/plaid/client";
-import type { PlaidCredentials } from "@/lib/plaid/types";
+import { testPlaidCredentials, isPlaidConfigured } from "@/lib/plaid/client";
 
-export async function POST(req: NextRequest) {
+export async function GET(req: NextRequest) {
   try {
     await requireAuth(req);
 
-    const body = await req.json();
-    const { clientId, secret, environment } = body;
-
-    if (!clientId || !secret || !environment) {
+    if (!isPlaidConfigured()) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { 
+          success: false, 
+          configured: false,
+          error: "Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET in your .env file." 
+        },
         { status: 400 }
       );
     }
 
-    const credentials: PlaidCredentials = {
-      clientId,
-      secret,
-      environment,
-    };
-
-    const result = await testPlaidCredentials(credentials);
+    // Test with sandbox environment by default
+    const result = await testPlaidCredentials("sandbox");
 
     if (result.success) {
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ 
+        success: true,
+        configured: true,
+        message: "Plaid credentials are valid"
+      });
     } else {
       return NextResponse.json(
-        { success: false, error: result.error },
+        { success: false, configured: true, error: result.error },
         { status: 400 }
       );
     }

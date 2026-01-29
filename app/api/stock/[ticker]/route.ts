@@ -87,7 +87,9 @@ export async function GET(
 ) {
   try {
     const { ticker } = await params;
-    const apiKey = request.headers.get('x-finnhub-key');
+    
+    // Get API key from environment
+    const apiKey = process.env.FINNHUB_API_KEY;
 
     if (!ticker) {
       return NextResponse.json(
@@ -98,7 +100,7 @@ export async function GET(
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'API key not configured', code: 'NO_API_KEY' },
+        { error: 'Finnhub API key not configured. Please set FINNHUB_API_KEY in your .env file.', code: 'NO_API_KEY' },
         { status: 401 }
       );
     }

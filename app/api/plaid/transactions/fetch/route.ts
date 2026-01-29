@@ -8,13 +8,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db/connection";
-import { plaidItems, plaidAccounts, settings } from "@/lib/db/schema";
+import { plaidItems, plaidAccounts } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { createPlaidClient } from "@/lib/plaid/client";
-import { decrypt } from "@/lib/encryption";
-import type { FetchPlaidTransactionsRequest, PlaidCredentials } from "@/lib/plaid/types";
+import { createPlaidClient, isPlaidConfigured } from "@/lib/plaid/client";
+import type { FetchPlaidTransactionsRequest } from "@/lib/plaid/types";
 import { TransactionsGetRequest, TransactionsGetResponse } from "plaid";
-import { PLAID_SETTINGS_KEYS } from "@/lib/plaid/types";
 
 // Generate unique IDs safely
 let idCounter = 0;
@@ -69,46 +67,20 @@ export async function POST(request: NextRequest) {
 
     const plaidItem = item[0];
 
-    // Decrypt access token
-    const accessToken = decrypt(plaidItem.accessToken);
+    // Use access token directly
+    const accessToken = plaidItem.accessToken;
 
-    // Get Plaid credentials from settings
-    const credentialsRows = await db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, PLAID_SETTINGS_KEYS.CLIENT_ID));
-
-    if (!credentialsRows || credentialsRows.length === 0) {
+    // Check if Plaid is configured
+    const { isPlaidConfigured, createPlaidClient } = await import("@/lib/plaid/client");
+    if (!isPlaidConfigured()) {
       return NextResponse.json(
-        { error: "Plaid credentials not configured" },
+        { error: "Plaid credentials not configured. Please set PLAID_CLIENT_ID and PLAID_SECRET in your .env file." },
         { status: 400 }
       );
     }
-
-    const secretRows = await db
-      .select()
-      .from(settings)
-      .where(eq(settings.key, PLAID_SETTINGS_KEYS.SECRET));
-
-    if (!secretRows || secretRows.length === 0) {
-      return NextResponse.json(
-        { error: "Plaid credentials not configured" },
-        { status: 400 }
-      );
-    }
-
-    // Decrypt credentials
-    const clientId = decrypt(credentialsRows[0].value);
-    const secret = decrypt(secretRows[0].value);
-
-    const credentials: PlaidCredentials = {
-      clientId,
-      secret,
-      environment: plaidItem.environment as "sandbox" | "development" | "production",
-    };
 
     // Get Plaid client
-    const client = createPlaidClient(credentials);
+    const client = createPlaidClient(plaidItem.environment as "sandbox" | "development" | "production");
 
     // Fetch transactions from Plaid
     const plaidRequest: TransactionsGetRequest = {

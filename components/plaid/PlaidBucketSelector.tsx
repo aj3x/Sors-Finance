@@ -40,8 +40,9 @@ import {
 } from "@/components/ui/combobox";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, CreditCard, Plus } from "lucide-react";
+import { Loader2, CreditCard, Plus, PiggyBank, TrendingUp, Home } from "lucide-react";
 import { toast } from "sonner";
+import { invalidatePortfolio } from "@/lib/hooks/useDatabase";
 
 type BucketType = "Savings" | "Investments" | "Assets" | "Debt";
 
@@ -95,6 +96,8 @@ export function PlaidBucketSelector({
   const [portfolioAccounts, setPortfolioAccounts] = useState<PortfolioAccount[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
+  // Track which accounts are explicitly in "create new" mode (not derived from name matching)
+  const [creatingNewAccounts, setCreatingNewAccounts] = useState<Set<number>>(new Set());
 
   // Initialize account selections when dialog opens with accounts
   useEffect(() => {
@@ -104,11 +107,11 @@ export function PlaidBucketSelector({
           // Use existing mapping if in edit mode, otherwise use defaults
           const existing = existingMappings?.get(acc.id);
           return [
-            acc.id, 
-            existing || { 
-              bucket: acc.suggestedBucket, 
+            acc.id,
+            existing || {
+              bucket: acc.suggestedBucket,
               accountName: '', // Default to empty - user must select
-              itemName: '' // Default to empty - user must type
+              itemName: acc.officialName || acc.name // Pre-fill with official name or fallback to name
             }
           ];
         }))
@@ -150,6 +153,14 @@ export function PlaidBucketSelector({
 
   const handleBucketChange = (accountId: number, bucket: BucketType) => {
     console.log('handleBucketChange called:', { accountId, bucket });
+    
+    // Remove from create-new mode when bucket changes (forces re-selection)
+    setCreatingNewAccounts(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(accountId);
+      return newSet;
+    });
+    
     setAccountSelections(prev => {
       const newMap = new Map(prev);
       const current = newMap.get(accountId)!;
@@ -165,25 +176,40 @@ export function PlaidBucketSelector({
 
   const handleAccountSelectionChange = (accountId: number, value: string) => {
     console.log('handleAccountSelectionChange:', { accountId, value });
-    setAccountSelections(prev => {
-      const newMap = new Map(prev);
-      const current = newMap.get(accountId)!;
+    
+    if (value === '__CREATE_NEW__') {
+      // Track that this account is in create-new mode
+      setCreatingNewAccounts(prev => new Set(prev).add(accountId));
       
-      if (value === '__CREATE_NEW__') {
+      setAccountSelections(prev => {
+        const newMap = new Map(prev);
+        const current = newMap.get(accountId)!;
         // User wants to create new - prefill with institution name
         newMap.set(accountId, {
           ...current,
           accountName: institutionName,
         });
-      } else {
+        return newMap;
+      });
+    } else {
+      // User selected existing account - remove from create-new mode
+      setCreatingNewAccounts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(accountId);
+        return newSet;
+      });
+      
+      setAccountSelections(prev => {
+        const newMap = new Map(prev);
+        const current = newMap.get(accountId)!;
         // User selected existing account
         newMap.set(accountId, {
           ...current,
           accountName: value,
         });
-      }
-      return newMap;
-    });
+        return newMap;
+      });
+    }
   };
 
   const handleAccountNameChange = (accountId: number, value: string) => {
@@ -248,33 +274,131 @@ export function PlaidBucketSelector({
           acc => acc.bucket === selection.bucket && acc.name === selection.accountName
         );
 
+        // Check if this account is currently mapped (has portfolioAccountId in existingMappings)
+        const isMapped = existingMappings?.has(accountId);
+
         return {
           plaidAccountId: accountId,
           bucket: selection.bucket,
           portfolioAccountId: existingAccount?.id || null,
           newAccountName: existingAccount ? undefined : selection.accountName,
           itemName: selection.itemName,
+          isMapped, // Track whether this account was previously mapped
         };
       });
 
-      // Call API to create portfolio accounts/items
-      const response = await fetch("/api/plaid/create-portfolio-accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          itemId,
-          accountMappings,
-        }),
-      });
+      // In edit mode, split into two groups: mapped (update) vs unmapped (create)
+      if (mode === 'edit') {
+        const mappedAccounts = accountMappings.filter(m => m.isMapped);
+        const unmappedAccounts = accountMappings.filter(m => !m.isMapped);
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create portfolio accounts");
+        let totalUpdated = 0;
+        let totalCreated = 0;
+        let totalFailed = 0;
+        const allErrors: string[] = [];
+
+        // Update existing mappings
+        if (mappedAccounts.length > 0) {
+          const updateResponse = await fetch("/api/plaid/update-portfolio-accounts", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              itemId,
+              accountMappings: mappedAccounts,
+            }),
+          });
+
+          if (updateResponse.ok) {
+            const updateData = await updateResponse.json();
+            totalUpdated = updateData.updated || 0;
+            totalFailed += updateData.failed || 0;
+            if (updateData.errors) allErrors.push(...updateData.errors);
+          } else {
+            const error = await updateResponse.json();
+            allErrors.push(error.error || 'Failed to update accounts');
+          }
+        }
+
+        // Create new mappings for unmapped accounts
+        if (unmappedAccounts.length > 0) {
+          const createResponse = await fetch("/api/plaid/create-portfolio-accounts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              itemId,
+              accountMappings: unmappedAccounts,
+            }),
+          });
+
+          if (createResponse.ok) {
+            const createData = await createResponse.json();
+            totalCreated = createData.created || 0;
+            totalFailed += createData.failed || 0;
+            if (createData.errors) allErrors.push(...createData.errors);
+          } else {
+            const error = await createResponse.json();
+            allErrors.push(error.error || 'Failed to create accounts');
+          }
+        }
+
+        // Show combined results
+        const totalSuccess = totalUpdated + totalCreated;
+        if (totalSuccess > 0 && totalFailed === 0) {
+          toast.success(`Successfully updated ${totalSuccess} account${totalSuccess !== 1 ? 's' : ''}`);
+        } else if (totalSuccess > 0 && totalFailed > 0) {
+          toast.warning(`Updated ${totalSuccess}, failed ${totalFailed}. ${allErrors[0] || ''}`);
+        } else if (totalFailed > 0) {
+          toast.error(`Failed to update: ${allErrors[0] || 'Unknown error'}`);
+          return;
+        } else {
+          toast.info('No changes made');
+          onOpenChange(false);
+          return;
+        }
+      } else {
+        // Create mode: use create endpoint for all accounts
+        const response = await fetch("/api/plaid/create-portfolio-accounts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            itemId,
+            accountMappings,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to create portfolio accounts');
+        }
+
+        const data = await response.json();
+        const count = data.created || 0;
+        const failCount = data.failed || 0;
+
+        if (count > 0 && failCount === 0) {
+          toast.success(`Successfully added ${count} account${count !== 1 ? 's' : ''}`);
+        } else if (count > 0 && failCount > 0) {
+          toast.warning(`Added ${count}, failed ${failCount}. ${data.errors?.[0] || ''}`);
+        } else if (failCount > 0) {
+          toast.error(`Failed to create: ${data.errors?.[0] || 'Unknown error'}`);
+          return;
+        } else {
+          toast.info('No changes made');
+          onOpenChange(false);
+          return;
+        }
       }
 
-      const data = await response.json();
-      
-      toast.success(`Successfully added ${data.created} account${data.created !== 1 ? 's' : ''} to portfolio`);
+      // Sync balances immediately after creating accounts so they don't show as $0
+      if (mode === 'create') {
+        fetch("/api/plaid/balances", { method: "POST" })
+          .then(() => invalidatePortfolio())
+          .catch((err) => console.error("Auto balance sync failed:", err));
+      }
+
+      // Invalidate portfolio cache to refresh UI
+      invalidatePortfolio();
+
       onConfirm();
       onOpenChange(false);
     } catch (error) {
@@ -285,22 +409,9 @@ export function PlaidBucketSelector({
     }
   };
 
-  const getBucketColor = (bucket: BucketType) => {
-    switch (bucket) {
-      case "Savings":
-        return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-      case "Investments":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-      case "Assets":
-        return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200";
-      case "Debt":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-    }
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange} modal={true}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" onCloseAutoFocus={(e) => {
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden" onCloseAutoFocus={(e) => {
         setTimeout(() => {
           document.body.style.overflow = '';
           document.body.style.removeProperty('overflow');
@@ -311,13 +422,13 @@ export function PlaidBucketSelector({
             Map {accounts.length} account{accounts.length !== 1 ? 's' : ''} from {institutionName}
           </DialogTitle>
           <DialogDescription>
-            {mode === 'edit' 
+            {mode === 'edit'
               ? 'Update the item name, bucket, and portfolio account for each bank account.'
               : 'Set the item name, bucket, and portfolio account for each bank account.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-3">
+        <div className="space-y-4 py-3 overflow-y-auto flex-1 min-h-0 border-y -mx-6 px-6">
           {accounts.map((account) => {
             const selection = accountSelections.get(account.id);
             if (!selection) return null; // Skip if not initialized yet
@@ -328,25 +439,17 @@ export function PlaidBucketSelector({
 
             return (
               <Card key={account.id} className="border-muted/50">
-                <CardContent className="p-4 space-y-4">
-                  {/* Account Info Header - Compact */}
+                <CardContent className="px-4 py-2.5 space-y-3">
+                  {/* Account Info Header */}
                   <div className="flex items-center gap-2">
                     <CreditCard className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="font-medium text-sm truncate">
-                          {account.officialName || account.name}
-                        </p>
-                        {account.mask && (
-                          <Badge variant="outline" className="text-[10px] h-4 px-1">
-                            ••{account.mask}
-                          </Badge>
-                        )}
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        {account.subtype} • {formatCurrency(account.currentBalance)}
-                      </p>
-                    </div>
+                    <p className="font-medium text-sm truncate flex-1 min-w-0">
+                      {account.officialName || account.name}
+                      {account.mask && <span className="text-muted-foreground font-normal ml-2">••{account.mask}</span>}
+                    </p>
+                    <span className="text-sm text-muted-foreground shrink-0">
+                      {formatCurrency(account.currentBalance)}
+                    </span>
                   </div>
 
                   {/* Form Fields - 2x2 Grid */}
@@ -383,25 +486,25 @@ export function PlaidBucketSelector({
                           <SelectContent>
                             <SelectItem value="Savings">
                               <div className="flex items-center gap-1.5">
-                                <div className={`w-1.5 h-1.5 rounded-full ${getBucketColor("Savings")}`} />
+                                <PiggyBank className="h-3.5 w-3.5 text-emerald-500" />
                                 Savings
                               </div>
                             </SelectItem>
                             <SelectItem value="Investments">
                               <div className="flex items-center gap-1.5">
-                                <div className={`w-1.5 h-1.5 rounded-full ${getBucketColor("Investments")}`} />
+                                <TrendingUp className="h-3.5 w-3.5 text-blue-500" />
                                 Investments
                               </div>
                             </SelectItem>
                             <SelectItem value="Assets">
                               <div className="flex items-center gap-1.5">
-                                <div className={`w-1.5 h-1.5 rounded-full ${getBucketColor("Assets")}`} />
+                                <Home className="h-3.5 w-3.5 text-amber-500" />
                                 Assets
                               </div>
                             </SelectItem>
                             <SelectItem value="Debt">
                               <div className="flex items-center gap-1.5">
-                                <div className={`w-1.5 h-1.5 rounded-full ${getBucketColor("Debt")}`} />
+                                <CreditCard className="h-3.5 w-3.5 text-red-500" />
                                 Debt
                               </div>
                             </SelectItem>
@@ -417,37 +520,50 @@ export function PlaidBucketSelector({
                         <Label htmlFor={`account-select-${account.id}`} className="text-xs text-muted-foreground">
                           Account
                         </Label>
-                        <Select
-                          value={
-                            selection.accountName === '' 
-                              ? '' 
-                              : availableAccounts.find(acc => acc.name === selection.accountName)
-                              ? selection.accountName
-                              : '__CREATE_NEW__'
-                          }
-                          onValueChange={(value) => handleAccountSelectionChange(account.id, value)}
-                        >
-                          <SelectTrigger id={`account-select-${account.id}`} size="sm" className="text-sm w-full">
-                            <SelectValue placeholder="Select account..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__CREATE_NEW__">Create New Account</SelectItem>
-                            {availableAccounts.length > 0 && (
-                              <>
-                                <SelectSeparator />
-                                {availableAccounts.map((acc) => (
-                                  <SelectItem key={acc.id} value={acc.name}>
-                                    {acc.name}
-                                  </SelectItem>
-                                ))}
-                              </>
-                            )}
-                          </SelectContent>
-                        </Select>
+                        {(() => {
+                          const isCreatingNew = creatingNewAccounts.has(account.id);
+                          const isExistingAccount = availableAccounts.some(acc => acc.name === selection.accountName);
+                          
+                          // Compute Select value:
+                          // - Empty string if no selection yet
+                          // - '__CREATE_NEW__' if in create-new mode
+                          // - The account name if it's an existing account
+                          const selectValue = selection.accountName === ''
+                            ? ''
+                            : isCreatingNew || !isExistingAccount
+                            ? '__CREATE_NEW__'
+                            : selection.accountName;
+
+                          return (
+                            <Select
+                              value={selectValue}
+                              onValueChange={(value) => {
+                                handleAccountSelectionChange(account.id, value);
+                              }}
+                            >
+                              <SelectTrigger id={`account-select-${account.id}`} size="sm" className="text-sm w-full">
+                                <SelectValue placeholder="Select account..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__CREATE_NEW__">Create New Account</SelectItem>
+                                {availableAccounts.length > 0 && (
+                                  <>
+                                    <SelectSeparator />
+                                    {availableAccounts.map((acc) => (
+                                      <SelectItem key={acc.id} value={acc.name}>
+                                        {acc.name}
+                                      </SelectItem>
+                                    ))}
+                                  </>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          );
+                        })()}
                       </div>
 
                       {/* New Account Name Input - Only show if creating new */}
-                      {selection.accountName !== '' && !availableAccounts.find(acc => acc.name === selection.accountName) && (
+                      {creatingNewAccounts.has(account.id) && (
                         <div className="space-y-1">
                           <Label htmlFor={`account-name-${account.id}`} className="text-xs text-muted-foreground">
                             New Account Name
@@ -470,7 +586,7 @@ export function PlaidBucketSelector({
           })}
         </div>
 
-        <div className="flex justify-end gap-2 pt-3 border-t">
+        <div className="flex justify-center gap-2 pt-3">
           <Button
             variant="outline"
             size="sm"
