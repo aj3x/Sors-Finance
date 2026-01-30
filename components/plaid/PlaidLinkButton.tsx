@@ -30,14 +30,12 @@ interface PlaidLinkButtonProps {
   onExit?: () => void;
   accessToken?: string;
   mode?: "create" | "update";
+  environment?: PlaidEnvironmentType;
 }
 
-export function PlaidLinkButton({ onSuccess, onExit, accessToken, mode = "create" }: PlaidLinkButtonProps) {
+export function PlaidLinkButton({ onSuccess, onExit, accessToken, mode = "create", environment = "production" }: PlaidLinkButtonProps) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [isCreatingToken, setIsCreatingToken] = useState(false);
-  
-  // Always use production environment
-  const environment: PlaidEnvironmentType = "production";
   
   // Bucket selector state
   const [showBucketSelector, setShowBucketSelector] = useState(false);
