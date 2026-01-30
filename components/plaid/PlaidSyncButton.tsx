@@ -10,6 +10,7 @@ interface PlaidSyncButtonProps {
   variant?: "default" | "secondary" | "ghost" | "outline";
   size?: "default" | "sm" | "lg" | "icon";
   className?: string;
+  itemId?: number;
   onSyncComplete?: (result: {
     accountsUpdated: number;
     accountsFailed: number;
@@ -17,10 +18,11 @@ interface PlaidSyncButtonProps {
   }) => void;
 }
 
-export function PlaidSyncButton({ 
-  variant = "secondary", 
+export function PlaidSyncButton({
+  variant = "secondary",
   size = "sm",
   className,
+  itemId,
   onSyncComplete
 }: PlaidSyncButtonProps) {
   const [isSyncing, setIsSyncing] = useState(false);
@@ -30,6 +32,8 @@ export function PlaidSyncButton({
     try {
       const response = await fetch("/api/plaid/balances", {
         method: "POST",
+        headers: itemId ? { "Content-Type": "application/json" } : undefined,
+        body: itemId ? JSON.stringify({ itemId }) : undefined,
       });
 
       if (!response.ok) {
@@ -88,8 +92,8 @@ export function PlaidSyncButton({
       disabled={isSyncing}
       className={className}
     >
-      <RefreshCw className={`h-4 w-4 mr-2 ${isSyncing ? 'animate-spin' : ''}`} />
-      Sync Balances
+      <RefreshCw className={`h-4 w-4 ${size === "icon" ? "" : "mr-2 "}${isSyncing ? 'animate-spin' : ''}`} />
+      {size !== "icon" && "Sync Balances"}
     </Button>
   );
 }

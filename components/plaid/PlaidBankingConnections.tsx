@@ -44,8 +44,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { toast } from "sonner";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { type PlaidEnvironmentType } from "@/lib/plaid/types";
+import { formatCurrency } from "@/lib/formatters";
 import { PlaidLinkButton } from "./PlaidLinkButton";
+import { PlaidSyncButton } from "./PlaidSyncButton";
 import { PlaidBucketSelector } from "./PlaidBucketSelector";
 
 interface PlaidInstitution {
@@ -67,6 +71,7 @@ interface PlaidInstitution {
     portfolioAccountName?: string | null;
     portfolioBucket?: string | null;
     portfolioItemName?: string | null;
+    currentBalance?: number | null;
   }>;
 }
 
@@ -86,6 +91,13 @@ export function PlaidBankingConnections({ plaidConfigured }: PlaidBankingConnect
   const [isLoadingInstitutions, setIsLoadingInstitutions] = useState(false);
   const [editingInstitution, setEditingInstitution] = useState<PlaidInstitution | null>(null);
   const [isTesting, setIsTesting] = useState(false);
+  const [plaidEnvironment, setPlaidEnvironment] = useState<PlaidEnvironmentType>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("plaid-environment");
+      if (saved === "sandbox" || saved === "production") return saved;
+    }
+    return "production";
+  });
 
   // Load connected institutions
   const loadInstitutions = async () => {
@@ -290,10 +302,25 @@ PLAID_CLIENT_ID=your_client_id_here{"\n"}PLAID_SECRET=your_secret_here
                     Manage your connected bank accounts
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="plaid-env-toggle" className="text-xs text-muted-foreground">
+                      {plaidEnvironment === "sandbox" ? "Sandbox" : "Production"}
+                    </Label>
+                    <Switch
+                      id="plaid-env-toggle"
+                      checked={plaidEnvironment === "production"}
+                      onCheckedChange={(checked) => {
+                        const env = checked ? "production" : "sandbox";
+                        setPlaidEnvironment(env);
+                        localStorage.setItem("plaid-environment", env);
+                      }}
+                    />
+                  </div>
                   <PlaidLinkButton
+                    environment={plaidEnvironment}
                     onSuccess={() => {
-                      // Institutions will refresh when bucket mapping is confirmed
+                      loadInstitutions();
                     }}
                   />
                 </div>
@@ -341,7 +368,14 @@ PLAID_CLIENT_ID=your_client_id_here{"\n"}PLAID_SECRET=your_secret_here
                               onSuccess={loadInstitutions}
                             />
                           )}
-                          
+
+                          <PlaidSyncButton
+                            variant="ghost"
+                            size="icon"
+                            itemId={institution.id}
+                            onSyncComplete={() => loadInstitutions()}
+                          />
+
                           <Button
                             variant="ghost"
                             size="icon"
@@ -405,6 +439,11 @@ PLAID_CLIENT_ID=your_client_id_here{"\n"}PLAID_SECRET=your_secret_here
                               </p>
                             </div>
                             <div className="flex items-center gap-2">
+                              {account.currentBalance != null && (
+                                <span className="text-sm font-medium tabular-nums">
+                                  {formatCurrency(account.currentBalance)}
+                                </span>
+                              )}
                               {account.portfolioAccountId ? (() => {
                                 const config = BUCKET_ICONS[account.portfolioBucket || ""];
                                 const Icon = config?.icon;

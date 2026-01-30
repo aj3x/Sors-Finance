@@ -38,11 +38,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get all Plaid items for this user
+    // Parse optional itemId from request body
+    let itemId: number | undefined;
+    try {
+      const body = await request.json();
+      itemId = body?.itemId;
+    } catch {
+      // No body or invalid JSON - sync all items
+    }
+
+    // Get Plaid items for this user (optionally filtered by itemId)
     const userPlaidItems = await db
       .select()
       .from(plaidItems)
-      .where(eq(plaidItems.userId, userId));
+      .where(
+        itemId
+          ? and(eq(plaidItems.userId, userId), eq(plaidItems.id, itemId))
+          : eq(plaidItems.userId, userId)
+      );
 
     if (userPlaidItems.length === 0) {
       return NextResponse.json({

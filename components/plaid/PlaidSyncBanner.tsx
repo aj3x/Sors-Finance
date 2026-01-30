@@ -66,7 +66,7 @@ export function PlaidSyncBanner({
                 <span className="text-sm">
                   Some banks require re-authentication.
                 </span>
-                <Link href="/settings">
+                <Link href="/settings?tab=integrations">
                   <Button variant="outline" size="sm" className="h-7 gap-1">
                     Go to Integrations
                     <ExternalLink className="h-3 w-3" />

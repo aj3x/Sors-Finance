@@ -59,6 +59,7 @@ export async function GET(req: NextRequest) {
             portfolioAccountName: row.portfolioAccount?.name || null,
             portfolioBucket: row.portfolioAccount?.bucket || null,
             portfolioItemName: row.portfolioItem?.name || null,
+            currentBalance: row.portfolioItem?.currentValue ?? null,
           })),
         };
       })
