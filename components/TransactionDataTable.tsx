@@ -371,7 +371,7 @@ export function TransactionDataTable({
     },
     initialState: {
       pagination: {
-        pageIndex: 1,
+        pageIndex: 0,
         pageSize: 10,
       },
     },
@@ -397,15 +397,12 @@ export function TransactionDataTable({
   // When URL changes (back/forward), update state
   useEffect(() => {
     const urlSearch = searchParams.get("search") || "";
-    // If search term changed, always reset to page 1
+    
+    // If search term changed, reset to page 1
     if (urlSearch !== globalFilter) {
+      table.setPageIndex(0);
       setGlobalFilter(urlSearch);
       return;
-    }
-    // Only update page if search hasn't changed
-    const urlPage = parseInt(searchParams.get("page") || "1", 10) - 1;
-    if (urlPage !== table.getState().pagination.pageIndex) {
-      table.setPageIndex(urlPage);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
