@@ -113,7 +113,13 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
       );
     }
 
-    // Delete items first (cascade) - filtered by user
+    // Unlink any Plaid accounts that reference this portfolio account
+    await db
+      .update(schema.plaidAccounts)
+      .set({ portfolioAccountId: null })
+      .where(eq(schema.plaidAccounts.portfolioAccountId, accountId));
+
+    // Delete portfolio items for this account (cascade)
     await db
       .delete(schema.portfolioItems)
       .where(
@@ -123,7 +129,7 @@ export async function DELETE(request: NextRequest, context: RouteContext) {
         )
       );
 
-    // Delete account
+    // Delete the portfolio account itself
     await db
       .delete(schema.portfolioAccounts)
       .where(

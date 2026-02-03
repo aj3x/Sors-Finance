@@ -24,6 +24,7 @@ import {
 import { usePrivacy } from "@/lib/privacy-context";
 import { PortfolioItem } from "./PortfolioItem";
 import { AddItemDialog } from "./AddItemDialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 
@@ -46,14 +47,13 @@ export function AccountSection({ account, defaultOpen = true }: AccountSectionPr
   const [showAddItem, setShowAddItem] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(account.name);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const items = usePortfolioItems(account.id);
   const total = usePortfolioAccountTotal(account.id);
   const { formatAmount } = usePrivacy();
 
   const handleDelete = async () => {
-    if (!confirm(`Delete "${account.name}" and all its items?`)) return;
-
     try {
       await deletePortfolioAccount(account.id!);
       toast.success("Account deleted");
@@ -136,7 +136,7 @@ export function AccountSection({ account, defaultOpen = true }: AccountSectionPr
                     <Pencil className="h-4 w-4 mr-2" />
                     Rename
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleDelete} className="text-destructive">
+                  <DropdownMenuItem onClick={() => setShowDeleteConfirm(true)} className="text-destructive">
                     <Trash2 className="h-4 w-4 mr-2" />
                     Delete
                   </DropdownMenuItem>
@@ -179,6 +179,16 @@ export function AccountSection({ account, defaultOpen = true }: AccountSectionPr
         accountId={account.id!}
         accountName={account.name}
         bucket={account.bucket}
+      />
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onOpenChange={setShowDeleteConfirm}
+        title="Delete Account?"
+        description={`This will permanently delete "${account.name}" and all its items.`}
+        confirmLabel="Delete"
+        variant="destructive"
+        onConfirm={handleDelete}
       />
     </>
   );

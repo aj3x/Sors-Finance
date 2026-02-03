@@ -3,11 +3,20 @@ services:
     build: .
     ports:
       # Bind to localhost only for security
+      # Can change the host port (left side) if needed
       - "127.0.0.1:3000:3000"
     volumes:
       # Persist SQLite database
       - sors-data:/app/data
+    # Load environment variables from .env file (for Docker CLI users)
+    env_file: .env
     environment:
+      # These variables can be overridden in Portainer/Docker UI
+      # Docker CLI users: values come from .env file automatically
+      # Portainer users: enter these in the Environment Variables section
+      - PLAID_CLIENT_ID=${PLAID_CLIENT_ID}
+      - PLAID_SECRET=${PLAID_SECRET}
+      - FINNHUB_API_KEY=${FINNHUB_API_KEY}
       - NODE_ENV=production
     restart: unless-stopped
 

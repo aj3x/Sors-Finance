@@ -15,6 +15,7 @@ let currentJob: ScheduledTask | null = null;
 
 const SNAPSHOT_TIME_KEY = "SNAPSHOT_TIME";
 const SNAPSHOT_ENABLED_KEY = "SNAPSHOT_ENABLED";
+const PLAID_SYNC_WITH_SNAPSHOT_KEY = "PLAID_SYNC_WITH_SNAPSHOT";
 
 /**
  * Get the configured snapshot time from the database (uses first found or default)
@@ -46,6 +47,144 @@ async function isSnapshotEnabledForUser(userId: number): Promise<boolean> {
 
   // Default to true if no setting exists
   return result[0]?.value !== "false";
+}
+
+/**
+ * Check if Plaid sync is enabled for a specific user
+ * When enabled, Plaid balances will sync before creating portfolio snapshots
+ */
+async function isPlaidSyncEnabledForUser(userId: number): Promise<boolean> {
+  const result = await db
+    .select()
+    .from(schema.settings)
+    .where(
+      and(
+        eq(schema.settings.key, PLAID_SYNC_WITH_SNAPSHOT_KEY),
+        eq(schema.settings.userId, userId)
+      )
+    )
+    .limit(1);
+
+  // Default to false if no setting exists (opt-in model)
+  return result[0]?.value === "true";
+}
+
+/**
+ * Sync Plaid balances for a specific user
+ */
+async function syncPlaidBalancesForUser(userId: number): Promise<{ success: boolean; accountsUpdated: number; errors: string[] }> {
+  try {
+    // Import dynamically to avoid circular dependencies
+    const { db: dbInstance } = await import("./db/connection");
+    const { plaidItems, plaidAccounts, portfolioItems } = await import("./db/schema");
+    const { eq, and } = await import("drizzle-orm");
+    const { createPlaidClient, isPlaidConfigured } = await import("./plaid/client");
+
+    // Check if Plaid is configured
+    if (!isPlaidConfigured()) {
+      return { success: true, accountsUpdated: 0, errors: ["Plaid credentials not configured in environment variables"] };
+    }
+
+    // Get all Plaid items for this user
+    const userPlaidItems = await dbInstance
+      .select()
+      .from(plaidItems)
+      .where(eq(plaidItems.userId, userId));
+
+    if (userPlaidItems.length === 0) {
+      return { success: true, accountsUpdated: 0, errors: [] };
+    }
+
+    let accountsUpdated = 0;
+    const errors: string[] = [];
+
+    // Process each Plaid item
+    for (const item of userPlaidItems) {
+      try {
+        // Use access token directly
+        const accessToken = item.accessToken;
+
+        // Create Plaid client from environment variables
+        const client = createPlaidClient(item.environment as "sandbox" | "development" | "production");
+
+        // Fetch balances
+        const balanceResponse = await client.accountsBalanceGet({
+          access_token: accessToken,
+        });
+
+        // Get Plaid accounts linked to portfolio accounts
+        const linkedAccounts = await dbInstance
+          .select({
+            plaidAccount: plaidAccounts,
+            portfolioItem: portfolioItems,
+          })
+          .from(plaidAccounts)
+          .innerJoin(
+            portfolioItems,
+            eq(plaidAccounts.portfolioAccountId, portfolioItems.accountId)
+          )
+          .where(
+            and(
+              eq(plaidAccounts.plaidItemId, item.id),
+              eq(plaidAccounts.userId, userId)
+            )
+          );
+
+        // Update portfolio items with current balances
+        for (const account of balanceResponse.data.accounts) {
+          const linkedAccount = linkedAccounts.find(
+            (la) => la.plaidAccount.accountId === account.account_id
+          );
+
+          if (linkedAccount) {
+            const balance = account.balances.current || 0;
+
+            // Update portfolio item
+            await dbInstance
+              .update(portfolioItems)
+              .set({
+                currentValue: balance,
+                updatedAt: new Date(),
+              })
+              .where(eq(portfolioItems.id, linkedAccount.portfolioItem.id));
+
+            accountsUpdated++;
+          }
+        }
+
+        // Update item last sync timestamp
+        await dbInstance
+          .update(plaidItems)
+          .set({
+            lastSync: new Date(),
+            status: "active",
+            errorMessage: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(plaidItems.id, item.id));
+      } catch (error: unknown) {
+        const err = error as { response?: { data?: { error_message?: string } }; message?: string };
+        const errorMessage = err?.response?.data?.error_message || err.message || "Unknown error";
+        errors.push(`${item.institutionName}: ${errorMessage}`);
+
+        // Update item status
+        await dbInstance
+          .update(plaidItems)
+          .set({
+            status: "error",
+            errorMessage,
+            updatedAt: new Date(),
+          })
+          .where(eq(plaidItems.id, item.id));
+      }
+    }
+
+    return { success: errors.length === 0, accountsUpdated, errors };
+  } catch (error: unknown) {
+    console.error(`[Scheduler] Plaid sync error for user #${userId}:`, error);
+    const err = error as { message?: string };
+    return { success: false, accountsUpdated: 0, errors: [err.message || "Unknown error"] };
+  }
 }
 
 /**
@@ -178,12 +317,27 @@ async function runSnapshotTask() {
 
     console.log(`[Scheduler] Processing ${allUsers.length} user(s)...`);
 
-    // Create snapshot for each user (if enabled for them)
+    // Process each user
     for (const user of allUsers) {
       try {
-        // Check if snapshots are enabled for this user
-        const enabled = await isSnapshotEnabledForUser(user.id);
-        if (!enabled) {
+        // Step 1: Sync Plaid balances if enabled
+        const plaidSyncEnabled = await isPlaidSyncEnabledForUser(user.id);
+        if (plaidSyncEnabled) {
+          console.log(`[Scheduler] Syncing Plaid balances for user #${user.id} (${user.username})...`);
+          const syncResult = await syncPlaidBalancesForUser(user.id);
+          if (syncResult.accountsUpdated > 0) {
+            console.log(`[Scheduler] Synced ${syncResult.accountsUpdated} account(s) for user #${user.id}`);
+          }
+          if (syncResult.errors.length > 0) {
+            console.error(`[Scheduler] Plaid sync errors for user #${user.id}:`, syncResult.errors);
+          }
+        } else {
+          console.log(`[Scheduler] Plaid sync disabled for user #${user.id} (${user.username}), skipping.`);
+        }
+
+        // Step 2: Create portfolio snapshot if enabled
+        const snapshotEnabled = await isSnapshotEnabledForUser(user.id);
+        if (!snapshotEnabled) {
           console.log(`[Scheduler] Snapshots disabled for user #${user.id} (${user.username}), skipping.`);
           continue;
         }
@@ -199,12 +353,12 @@ async function runSnapshotTask() {
         const snapshotId = await createSnapshotForUser(user.id);
         console.log(`[Scheduler] Created snapshot #${snapshotId} for user #${user.id} (${user.username})`);
       } catch (userError) {
-        console.error(`[Scheduler] Failed to create snapshot for user #${user.id}:`, userError);
+        console.error(`[Scheduler] Failed to process user #${user.id}:`, userError);
         // Continue with other users even if one fails
       }
     }
 
-    console.log("[Scheduler] Completed snapshot creation for all users.");
+    console.log("[Scheduler] Completed processing for all users.");
   } catch (error) {
     console.error("[Scheduler] Failed to run snapshot task:", error);
   }

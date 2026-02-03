@@ -20,8 +20,75 @@ A privacy-focused, self-hosted personal finance app for budget tracking, transac
 Your financial data stays on your machine. Sors uses a local SQLite database — no accounts, no cloud sync, no tracking. You own your data completely.
 
 - **Self-hosted**: Runs entirely on your own hardware
-- **No external services**: Only outbound calls are optional stock/crypto price lookups
+- **No external services**: Only outbound calls are optional stock/crypto price lookups and Plaid (if you enable it)
 - **Portable data**: Single SQLite file you can backup or migrate
+
+## Plaid Integration (Optional)
+
+Sors supports optional Plaid integration for automatic transaction imports and balance syncing. **You bring your own Plaid developer account** — this keeps your data under your control and lets you use Plaid's free tier.
+
+### Features
+
+- **Automatic Transaction Import**: Fetch transactions directly from your connected banks
+- **Balance Syncing**: Keep portfolio account balances up-to-date automatically
+- **Multi-Bank Support**: Connect multiple banks with a single Plaid account
+- **Scheduler Integration**: Daily balance sync runs with portfolio snapshots
+
+### Setup
+
+1. **Create a Free Plaid Developer Account**
+   - Go to [dashboard.plaid.com](https://dashboard.plaid.com)
+   - Sign up and create a new application
+   - Get your `client_id` and `secret` (works for sandbox, development, and production)
+
+2. **Get a Free Finnhub API Key**
+   - Go to [finnhub.io/register](https://finnhub.io/register)
+   - Sign up and get your API key (60 API calls/minute free tier)
+
+3. **Configure Environment Variables**
+   
+   **For Local Development:**
+   ```bash
+   # Copy the example file
+   cp .env.example .env
+   
+   # Edit .env and add your API keys:
+   PLAID_CLIENT_ID=your_plaid_client_id_here
+   PLAID_SECRET=your_plaid_secret_here
+   FINNHUB_API_KEY=your_finnhub_api_key_here
+   ```
+   
+   **For Docker CLI:**
+   - Same as above - Docker Compose automatically loads the `.env` file
+   
+   **For Portainer/Docker UI:**
+   - In your stack configuration, add these environment variables:
+     - `PLAID_CLIENT_ID`
+     - `PLAID_SECRET`
+     - `FINNHUB_API_KEY`
+
+4. **Connect Your Banks**
+   - Start the app and go to Settings → Integrations
+   - Click "Connect a Bank"
+   - Follow Plaid Link flow to connect your accounts
+   - Choose portfolio bucket (Savings/Investments/Assets/Debt) for each account
+   - Balances sync automatically
+
+5. **Import Transactions**
+   - Go to Transactions page → Import
+   - Choose "Connect with Plaid"
+   - Select institution, accounts, and date range
+   - Transactions flow through the same categorization pipeline as manual imports
+
+### Security
+
+- API keys stored as environment variables (never in database)
+- All credentials only accessible server-side
+- Multi-user households share API keys (appropriate for self-hosted apps)
+
+### Pricing
+
+Plaid offers a free Development tier with limited transaction history. Production usage requires paid plans. Since you use your own API credentials, you control and pay for your own usage. See [plaid.com/pricing](https://plaid.com/pricing) for details.
 
 ## Quick Start
 
