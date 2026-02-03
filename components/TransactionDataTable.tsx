@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   ColumnDef,
   ColumnFiltersState,
@@ -86,12 +87,18 @@ export function TransactionDataTable({
   onDeleteTransaction,
   onBulkDeleteTransactions,
 }: TransactionDataTableProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Read initial state from URL
+  const initialSearch = searchParams.get("search") || "";
+
   const [sorting, setSorting] = useState<SortingState>([
     { id: "date", desc: true },
   ]);
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
-  const [globalFilter, setGlobalFilter] = useState("");
+  const [globalFilter, setGlobalFilter] = useState(initialSearch);
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
   const [showBulkCategoryDialog, setShowBulkCategoryDialog] = useState(false);
@@ -364,10 +371,44 @@ export function TransactionDataTable({
     },
     initialState: {
       pagination: {
+        pageIndex: 1,
         pageSize: 10,
       },
     },
   });
+
+  // Sync page and search term to URL
+  useEffect(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (globalFilter) {
+      params.set("search", globalFilter);
+    } else {
+      params.delete("search");
+    }
+    // Only push if changed
+    const newQuery = params.toString();
+    const currentQuery = searchParams.toString();
+    if (newQuery !== currentQuery) {
+      router.replace("?" + newQuery, { scroll: false });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [table.getState().pagination.pageIndex, globalFilter]);
+
+  // When URL changes (back/forward), update state
+  useEffect(() => {
+    const urlSearch = searchParams.get("search") || "";
+    // If search term changed, always reset to page 1
+    if (urlSearch !== globalFilter) {
+      setGlobalFilter(urlSearch);
+      return;
+    }
+    // Only update page if search hasn't changed
+    const urlPage = parseInt(searchParams.get("page") || "1", 10) - 1;
+    if (urlPage !== table.getState().pagination.pageIndex) {
+      table.setPageIndex(urlPage);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // Get selected transaction IDs
   const selectedTransactionIds = useMemo(() => {
